@@ -1,0 +1,14 @@
+# GoFrame server/logger options only. Endpoints, keys, model names and
+# concurrency limits come from environment variables (see ../../.env.example
+# in the multimo main repo and internal/config/config.go).
+server:
+  serverAgent: "multimo"
+  accessLogEnabled: true
+  errorStack: true
+  dumpRouterMap: false
+  readTimeout: "60s"
+  writeTimeout: "0"   # uploads and SSE answers may stream for a long time
+
+logger:
+  level: "all"
+  stdout: true
