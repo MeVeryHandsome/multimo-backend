@@ -44,6 +44,7 @@ type Request struct {
 	Query       string   `json:"query"`
 	Collections []string `json:"collections"`
 	Types       []string `json:"types"`
+	AssetIDs    []int64  `json:"assetIds"`
 	TopK        int      `json:"topK"`
 	GroupBy     string   `json:"groupBy"` // asset (default) | unit
 	NoRerank    bool     `json:"noRerank"`
@@ -325,6 +326,9 @@ func (s *Service) allowedAssets(ctx context.Context, req Request) (map[int64]*as
 	}
 	if len(req.Types) > 0 {
 		m = m.WhereIn("type", req.Types)
+	}
+	if len(req.AssetIDs) > 0 {
+		m = m.WhereIn("id", req.AssetIDs)
 	}
 	rows, err := m.All()
 	if err != nil {

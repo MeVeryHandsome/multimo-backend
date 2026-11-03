@@ -10,9 +10,12 @@ import (
 )
 
 func TestDJIFlightLogAlignment(t *testing.T) {
-	pts, err := ParseFlightLog(testutil.Testdata(t, "video/dji/palos_verdes/flight_record.csv"))
+	pts, info, err := ParseFlightLogInfo(testutil.Testdata(t, "video/dji/palos_verdes/flight_record.csv"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if info.Aircraft != "DJI Mini 4 Pro" {
+		t.Fatalf("aircraft = %q", info.Aircraft)
 	}
 	if len(pts) < 4000 || math.Abs(pts[0].Lat-33.7332) > 0.001 {
 		t.Fatalf("%d points, first %+v", len(pts), pts[0])

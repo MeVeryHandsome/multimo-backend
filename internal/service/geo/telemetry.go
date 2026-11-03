@@ -21,13 +21,27 @@ type Point struct {
 	AltM float64
 }
 
+// FlightInfo is descriptive data from a flight log header row.
+type FlightInfo struct {
+	Aircraft string `json:"aircraft,omitempty"`
+	App      string `json:"app,omitempty"`
+}
+
 // ParseFlightLog reads a CSV flight record. It understands DJI exports
 // (timestamps_ns in epoch seconds, OSD.latitude, OSD.longitude,
 // OSD.height [ft]) and plain logs with time/lat/lon/alt columns.
 func ParseFlightLog(path string) ([]Point, error) {
+	pts, _, err := ParseFlightLogInfo(path)
+	return pts, err
+}
+
+// ParseFlightLogInfo is ParseFlightLog plus the aircraft model, when the log
+// names it (DJI: DETAILS.aircraftName / RECOVER.aircraftName / OSD.droneType).
+func ParseFlightLogInfo(path string) ([]Point, FlightInfo, error) {
+	var info FlightInfo
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 	defer f.Close()
 	r := csv.NewReader(f)
@@ -35,7 +49,7 @@ func ParseFlightLog(path string) ([]Point, error) {
 	r.LazyQuotes = true
 	head, err := r.Read()
 	if err != nil {
-		return nil, err
+		return nil, info, err
 	}
 	col := func(names ...string) int {
 		for _, n := range names {
@@ -53,8 +67,10 @@ func ParseFlightLog(path string) ([]Point, error) {
 	altFt := col("OSD.height [ft]")
 	altM := col("OSD.height [m]", "altitude", "alt", "height")
 	if ti < 0 || la < 0 || lo < 0 {
-		return nil, errors.New("flight log needs time, latitude and longitude columns")
+		return nil, info, errors.New("flight log needs time, latitude and longitude columns")
 	}
+	modelCols := []int{col("DETAILS.aircraftName"), col("RECOVER.aircraftName"), col("OSD.droneType")}
+	appCol := col("DETAILS.appVersion", "RECOVER.appVersion")
 	var pts []Point
 	for {
 		rec, err := r.Read()
@@ -62,10 +78,21 @@ func ParseFlightLog(path string) ([]Point, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, info, err
 		}
 		if len(rec) <= max(ti, la, lo) {
 			continue
+		}
+		if info.Aircraft == "" {
+			for _, c := range modelCols {
+				if c >= 0 && c < len(rec) && strings.TrimSpace(rec[c]) != "" {
+					info.Aircraft = strings.TrimSpace(rec[c])
+					break
+				}
+			}
+		}
+		if info.App == "" && appCol >= 0 && appCol < len(rec) {
+			info.App = strings.TrimSpace(rec[appCol])
 		}
 		ts, ok := parseTime(rec[ti])
 		lat, e1 := strconv.ParseFloat(strings.TrimSpace(rec[la]), 64)
@@ -84,10 +111,10 @@ func ParseFlightLog(path string) ([]Point, error) {
 		pts = append(pts, p)
 	}
 	if len(pts) == 0 {
-		return nil, errors.New("flight log has no valid GPS samples")
+		return nil, info, errors.New("flight log has no valid GPS samples")
 	}
 	sort.Slice(pts, func(i, j int) bool { return pts[i].TS.Before(pts[j].TS) })
-	return pts, nil
+	return pts, info, nil
 }
 
 func parseTime(s string) (time.Time, bool) {

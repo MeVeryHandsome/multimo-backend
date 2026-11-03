@@ -19,6 +19,7 @@ import (
 	"multimo-backend/internal/consts"
 	assetctl "multimo-backend/internal/controller/asset"
 	kfctl "multimo-backend/internal/controller/keyframe"
+	qactl "multimo-backend/internal/controller/qa"
 	searchctl "multimo-backend/internal/controller/search"
 	"multimo-backend/internal/controller/system"
 	taskctl "multimo-backend/internal/controller/task"
@@ -32,6 +33,7 @@ import (
 	"multimo-backend/internal/service/ingest"
 	"multimo-backend/internal/service/keyframe"
 	"multimo-backend/internal/service/pipeline"
+	"multimo-backend/internal/service/qa"
 	"multimo-backend/internal/service/search"
 	"multimo-backend/manifest"
 )
@@ -60,6 +62,7 @@ type App struct {
 	Ingest     *ingest.Service
 	Dispatcher *pipeline.Dispatcher
 	Search     *search.Service
+	QA         *qa.Service
 }
 
 func newApp(ctx context.Context) (*App, error) {
@@ -95,6 +98,7 @@ func newApp(ctx context.Context) (*App, error) {
 
 	// ingest -> keyframes -> analyze -> geo; basemaps also get a tile index.
 	app.Search = &search.Service{DB: db, AI: app.AI, Geo: gs}
+	app.QA = &qa.Service{DB: db, AI: app.AI, Assets: app.Assets, Search: app.Search}
 	app.Ingest.Next = func(a *entity.Asset) []string {
 		if a.Type == "document" {
 			return []string{search.IndexKind}
@@ -157,6 +161,7 @@ func runHTTP(ctx context.Context) error {
 			&taskctl.ControllerV1{DB: app.DB},
 			&kfctl.ControllerV1{DB: app.DB, Assets: app.Assets, Dispatcher: app.Dispatcher},
 			&searchctl.ControllerV1{Svc: app.Search},
+			&qactl.ControllerV1{Svc: app.QA},
 		)
 	})
 	g.Log().Infof(ctx, "multimo %s listening on %s, db %s, data %s, workers %d",

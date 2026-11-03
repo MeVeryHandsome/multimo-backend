@@ -117,7 +117,7 @@ func (s *Service) Handle(ctx context.Context, t *pipeline.Task, report pipeline.
 
 // fromTelemetry aligns the flight log with the video and positions every keyframe.
 func (s *Service) fromTelemetry(ctx context.Context, a *entity.Asset) error {
-	pts, err := ParseFlightLog(a.SidecarPath)
+	pts, info, err := ParseFlightLogInfo(a.SidecarPath)
 	if err != nil {
 		return pipeline.Permanent(fmt.Errorf("flight log: %w", err))
 	}
@@ -175,7 +175,8 @@ func (s *Service) fromTelemetry(ctx context.Context, a *entity.Asset) error {
 			maxAlt = max(maxAlt, p.AltM)
 		}
 		meta["telemetry"] = g.Map{"points": len(pts), "start": start.Format(time.RFC3339), "alignment": how,
-			"maxAltitudeM": maxAlt, "end": pts[len(pts)-1].TS.Format(time.RFC3339)}
+			"maxAltitudeM": maxAlt, "end": pts[len(pts)-1].TS.Format(time.RFC3339), "aircraft": info.Aircraft,
+			"app": info.App}
 		mj, _ := json.Marshal(meta)
 		_, err := tx.Exec(`UPDATE assets SET lat = ?, lon = ?, geo_source = 'telemetry', geo_accuracy_m = ?,
 			captured_at = ?, meta = ?::jsonb, updated_at = now() WHERE id = ?`, p0.Lat, p0.Lon, gpsAccuracyM, start, string(mj), a.Id)
