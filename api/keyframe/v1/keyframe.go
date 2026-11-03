@@ -78,7 +78,7 @@ type TrackRes struct {
 
 type RerunReq struct {
 	g.Meta     `path:"/pipeline/rerun" method:"post" tags:"Keyframe" summary:"批量重跑处理阶段" dc:"对符合条件的素材重新排队某个阶段，后续阶段会自动接着运行"`
-	Stage      string  `json:"stage"      v:"required|in:ingest,keyframes,analyze,geo,basemap" dc:"ingest | keyframes | analyze | geo | basemap"`
+	Stage      string  `json:"stage"      v:"required|in:ingest,keyframes,analyze,geo,basemap,index" dc:"ingest | keyframes | analyze | geo | basemap | index"`
 	Collection string  `json:"collection"`
 	Type       string  `json:"type"`
 	AssetIds   []int64 `json:"assetIds"`

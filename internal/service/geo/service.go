@@ -584,3 +584,6 @@ func cloneMeta(m g.Map) g.Map {
 	}
 	return out
 }
+
+// Gazetteer returns the place-name index built from ingested GeoJSON documents.
+func (s *Service) Gazetteer(ctx context.Context) (*Gazetteer, error) { return s.gazetteer(ctx) }
