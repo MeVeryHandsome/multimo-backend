@@ -59,7 +59,8 @@ type Geo struct {
 
 type Decision struct {
 	Endpoint
-	// Path is appended to BaseURL; the StartLux decision API lives at /decisions.
+	// Path is appended to BaseURL (vllm-sr: /systemone; the request and
+	// response schema is the StartLux decisions format).
 	Path string
 }
 
@@ -163,13 +164,13 @@ func Load() *Config {
 		},
 		Decision: Decision{
 			Endpoint: Endpoint{
-				BaseURL:        strings.TrimRight(env("DECISION_BASE_URL", "https://api.bamboonode.dev/v1"), "/"),
+				BaseURL:        strings.TrimRight(env("DECISION_BASE_URL", "https://app.vllm-sr.ai/v1"), "/"),
 				APIKey:         env("DECISION_API_KEY", ""),
-				Model:          env("DECISION_MODEL", "startlux-decision-27b-autothink"),
+				Model:          env("DECISION_MODEL", "vllm-sr/d3-ultra"),
 				Timeout:        time.Duration(envInt("DECISION_TIMEOUT_SEC", 90)) * time.Second,
 				MaxConcurrency: envInt("DECISION_MAX_CONCURRENCY", 4),
 			},
-			Path: env("DECISION_PATH", "/decisions"),
+			Path: env("DECISION_PATH", "/systemone"),
 		},
 		Vision: VisionEmbedding{
 			Endpoint: Endpoint{
