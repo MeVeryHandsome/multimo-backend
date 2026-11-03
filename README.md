@@ -54,6 +54,8 @@ make run
 | GET | `/api/v1/keyframes/{id}/image` | 关键帧图片（JPEG） |
 | GET | `/api/v1/assets/{id}/track` | 飞行轨迹（来自配套飞行记录，已对齐到视频时间轴） |
 | POST | `/api/v1/pipeline/rerun` | 按条件批量重跑某个处理阶段 |
+| POST | `/api/v1/search` | 混合检索：BM25 + 文本向量 + 以文搜图 + 目标计数 + 时空过滤，RRF 融合，Decision 精排 |
+| POST | `/api/v1/qa` | 智能问答：点名素材 + 检索证据，Decision 判断问题类型和证据，VLM 带引用作答 |
 | GET | `/api/v1/tasks` | 处理任务列表 |
 | GET | `/api/v1/system/ai-calls` | AI 调用汇总（token、延迟、降级次数）和最近记录 |
 | GET | `/api/v1/system/stats` | 数据概况 |
@@ -69,6 +71,7 @@ make run
 | analyze | VLM 描述、场景标签、目标框（0~1000 相对坐标换算为像素）、地标、文字、地点猜测；文本向量 |
 | geo | 飞行记录 / EXIF / 容器 GPS → 地名库粗定位 → 底图视觉匹配 + 航迹平滑 |
 | basemap | 大幅 GeoTIFF 按 250/300/400 m 切块并计算多模态向量 |
+| index | 文档切块的文本向量 |
 
 ## 测试
 
@@ -96,6 +99,8 @@ go test -race ./...
 | `internal/service/keyframe` | 关键帧选取与图像向量 |
 | `internal/service/analyze` | VLM 关键帧分析与检测框 |
 | `internal/service/geo` | 飞行记录对齐、地名库、底图索引、视觉定位与航迹平滑 |
+| `internal/service/search` | 查询理解、BM25、向量与目标计数召回、RRF、Decision 精排；文档切块向量任务 |
+| `internal/service/qa` | RAG 问答 |
 | `internal/pkg/llm` | AI 网关：VLM、Embedding、Decision，重试、降级、调用日志 |
 | `internal/pkg/media` | ffprobe 元数据、抽帧、缩略图 |
 | `internal/pkg/parser` | 文件类型识别；图像 EXIF；PDF、DOC、DOCX、TXT、CSV、GeoJSON 文本 |
