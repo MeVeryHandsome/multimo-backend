@@ -265,6 +265,11 @@ func (g *Gateway) backoff(attempt int, err error) time.Duration {
 func retryable(err error) bool {
 	var he *HTTPError
 	if errors.As(err, &he) {
+		// DashScope answers 400 when JSON-mode generation derails; a new
+		// attempt usually succeeds.
+		if he.Status == http.StatusBadRequest && strings.Contains(he.Body, "Model output became abnormal") {
+			return true
+		}
 		return he.Status == http.StatusTooManyRequests || he.Status >= 500
 	}
 	var ne net.Error

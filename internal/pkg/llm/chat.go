@@ -88,6 +88,12 @@ func (g *Gateway) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 				return attemptResult[*ChatResponse]{}, fmt.Errorf("%w: no choices", errBadResponse)
 			}
 			text := w.Choices[0].Message.Content
+			if req.JSON && extractJSON(text) == "" && w.Choices[0].FinishReason == "length" {
+				// Cut off at max_tokens: keep every complete element.
+				if fixed := repairTruncatedJSON(text); fixed != "" {
+					text = fixed
+				}
+			}
 			if req.JSON && extractJSON(text) == "" {
 				// The model ignored JSON mode; another attempt usually fixes it.
 				return attemptResult[*ChatResponse]{}, fmt.Errorf("%w: no JSON object in reply", errBadResponse)
@@ -200,6 +206,65 @@ func extractJSON(s string) string {
 				}
 				return ""
 			}
+		}
+	}
+	return ""
+}
+
+// repairTruncatedJSON salvages a JSON object cut off mid-generation: it
+// backs up to the end of the last complete value and closes every open
+// array and object. Returns "" if nothing valid can be recovered.
+func repairTruncatedJSON(s string) string {
+	start := strings.IndexByte(s, '{')
+	if start < 0 {
+		return ""
+	}
+	s = s[start:]
+	// Candidate cut points: just after a closing brace/bracket or a complete
+	// string/number, scanning from the end.
+	for cut := len(s); cut > 1; cut-- {
+		c := s[cut-1]
+		if c != '}' && c != ']' && c != '"' && !(c >= '0' && c <= '9') {
+			continue
+		}
+		head := strings.TrimRight(s[:cut], " \n\r\t")
+		var stack []byte
+		inStr, esc := false, false
+		for i := 0; i < len(head); i++ {
+			ch := head[i]
+			switch {
+			case esc:
+				esc = false
+			case ch == '\\' && inStr:
+				esc = true
+			case ch == '"':
+				inStr = !inStr
+			case inStr:
+			case ch == '{' || ch == '[':
+				stack = append(stack, ch)
+			case ch == '}' || ch == ']':
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+			}
+		}
+		if inStr || len(stack) == 0 {
+			continue
+		}
+		var b strings.Builder
+		b.WriteString(strings.TrimRight(head, ","))
+		for i := len(stack) - 1; i >= 0; i-- {
+			if stack[i] == '{' {
+				b.WriteByte('}')
+			} else {
+				b.WriteByte(']')
+			}
+		}
+		if out := b.String(); json.Valid([]byte(out)) {
+			return out
+		}
+		if len(s)-cut > 4000 {
+			break // give up on pathological input
 		}
 	}
 	return ""

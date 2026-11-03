@@ -153,7 +153,7 @@ func (s *Service) analyzeOne(ctx context.Context, a *entity.Asset, kf *kfRow) (s
 	temp := 0.1
 	var res Result
 	resp, err := s.AI.ChatJSON(ctx, llm.ChatRequest{
-		Purpose: "keyframe-analysis", AssetID: a.Id, MaxTokens: 6000, Temperature: &temp,
+		Purpose: "keyframe-analysis", AssetID: a.Id, MaxTokens: 8192, Temperature: &temp,
 		Messages: []llm.Message{{Text: buildPrompt(a.Type),
 			Images: []llm.Image{{Data: data, MIME: "image/jpeg", Width: kf.Width, Height: kf.Height}}}},
 		Fallback: func() (string, error) { return fallbackJSON(a, kf, path), nil },

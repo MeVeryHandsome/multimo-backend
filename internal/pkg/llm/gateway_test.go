@@ -394,3 +394,35 @@ func TestCancelledCallerGetsErrorNotFallback(t *testing.T) {
 		t.Fatalf("log = %+v", l)
 	}
 }
+
+func TestRepairTruncatedJSON(t *testing.T) {
+	cut := `{"description": "停车场", "objects": [{"label": "car", "bbox_2d": [1, 2, 3, 4]}, {"label": "car", "bbox_2d": [5, 6`
+	got := repairTruncatedJSON(cut)
+	var v struct {
+		Description string
+		Objects     []struct{ Label string }
+	}
+	// The half-written second object may survive with a short bbox; the
+	// analyzer drops boxes without four coordinates.
+	if err := json.Unmarshal([]byte(got), &v); err != nil || v.Description != "停车场" || len(v.Objects) < 1 || v.Objects[0].Label != "car" {
+		t.Fatalf("repaired = %q (%v)", got, err)
+	}
+	if repairTruncatedJSON("no json at all") != "" {
+		t.Fatal("garbage repaired")
+	}
+}
+
+func TestAbnormalJSONOutputIsRetried(t *testing.T) {
+	var calls atomic.Int32
+	g, _ := newTestGateway(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error":{"message":"Model output became abnormal while generating a JSON response"}}`)
+			return
+		}
+		io.WriteString(w, chatOK(`{"ok": true}`))
+	})
+	if _, err := g.Chat(context.Background(), ChatRequest{JSON: true, Messages: []Message{{Text: "x"}}}); err != nil || calls.Load() != 2 {
+		t.Fatalf("err=%v calls=%d", err, calls.Load())
+	}
+}

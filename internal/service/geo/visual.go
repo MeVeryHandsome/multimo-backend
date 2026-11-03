@@ -47,7 +47,8 @@ func QueryImages(src image.Image) []image.Image {
 	s := min(b.Dx(), b.Dy())
 	x0, y0 := b.Min.X+(b.Dx()-s)/2, b.Min.Y+(b.Dy()-s)/2
 	sq := image.NewRGBA(image.Rect(0, 0, querySide, querySide))
-	draw.ApproxBiLinear.Scale(sq, sq.Bounds(), src, image.Rect(x0, y0, x0+s, y0+s), draw.Src, nil)
+	// CatmullRom widens its kernel when shrinking, so large downscales do not alias.
+	draw.CatmullRom.Scale(sq, sq.Bounds(), src, image.Rect(x0, y0, x0+s, y0+s), draw.Src, nil)
 	out := make([]image.Image, queryRotations)
 	for i := range out {
 		out[i] = rotateReflect(sq, float64(i)*360/queryRotations)
@@ -118,7 +119,7 @@ func TileImage(t *geotiff.File, lat, lon float64, sideM float64) (image.Image, e
 		return nil, err
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, querySide, querySide))
-	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), region, region.Bounds(), draw.Src, nil)
+	draw.CatmullRom.Scale(dst, dst.Bounds(), region, region.Bounds(), draw.Src, nil)
 	return dst, nil
 }
 

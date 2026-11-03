@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"strconv"
 	"strings"
@@ -371,7 +372,13 @@ func (s *Service) loadTiles(ctx context.Context, m *entity.Asset) ([]Tile, error
 }
 
 func (s *Service) candidates(ctx context.Context, a *entity.Asset, k *kfGeo, tiles []Tile) ([]Candidate, error) {
-	f, err := os.Open(s.Assets.Abs(k.Path))
+	// Photos are matched from the original file (full resolution, no
+	// re-encoding); video keyframes from the extracted frame.
+	src := s.Assets.Abs(k.Path)
+	if a.Type == "image" && (a.Format == "jpeg" || a.Format == "png") {
+		src = a.StoragePath
+	}
+	f, err := os.Open(src)
 	if err != nil {
 		return nil, err
 	}
