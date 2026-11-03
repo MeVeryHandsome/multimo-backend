@@ -28,6 +28,14 @@ func (e Endpoint) Configured() bool {
 	return e.BaseURL != "" && e.APIKey != "" && e.Model != ""
 }
 
+type VLM struct {
+	Endpoint
+	// EnableThinking is sent as enable_thinking ("true"/"false"); empty omits
+	// the parameter for servers that do not know it. Thinking off keeps
+	// per-frame description at a few seconds on qwen3.8-max.
+	EnableThinking string
+}
+
 type Embedding struct {
 	Endpoint
 	Dim int
@@ -74,7 +82,7 @@ type Config struct {
 	HTTPAddr  string
 	Database  Database
 	Storage   Storage
-	VLM       Endpoint
+	VLM       VLM
 	Embedding Embedding
 	Decision  Decision
 	AI        AIPolicy
@@ -116,7 +124,7 @@ func Load() *Config {
 			TestdataDir: env("TESTDATA_DIR", "../testdata"),
 			MaxUploadMB: envInt("MAX_UPLOAD_MB", 4096),
 		},
-		VLM: vlm,
+		VLM: VLM{Endpoint: vlm, EnableThinking: env("VLM_ENABLE_THINKING", "false")},
 		Embedding: Embedding{
 			Endpoint: Endpoint{
 				// Embeddings default to the VLM endpoint: Aliyun serves both.

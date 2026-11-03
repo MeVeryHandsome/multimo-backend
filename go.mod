@@ -1,10 +1,15 @@
 module multimo-backend
 
-go 1.24
+go 1.24.0
+
+toolchain go1.24.7
 
 require (
 	github.com/gogf/gf/contrib/drivers/pgsql/v2 v2.10.4
 	github.com/gogf/gf/v2 v2.10.4
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
+	golang.org/x/image v0.36.0
+	golang.org/x/text v0.34.0
 )
 
 require (
@@ -34,6 +39,5 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
