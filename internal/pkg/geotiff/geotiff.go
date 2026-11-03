@@ -90,6 +90,9 @@ type File struct {
 
 	cacheIdx  int
 	cacheData []byte
+
+	// BytesRead counts pixel bytes read from disk (for tests and tuning).
+	BytesRead int64
 }
 
 // Open reads the first IFD. The file stays open until Close.
@@ -347,6 +350,7 @@ func (t *File) Overview(maxDim int) (*image.RGBA, error) {
 				if t.cacheIdx != key {
 					off := t.offsets[idx] + int64((sy-ty*t.TileH)*t.TileW*t.Samples)
 					n, err := t.f.ReadAt(rowBuf, off)
+					t.BytesRead += int64(n)
 					if err != nil && !(errors.Is(err, io.EOF) && n > 0) {
 						return nil, err
 					}
@@ -394,7 +398,9 @@ func (t *File) chunk(idx int) ([]byte, error) {
 		return t.cacheData, nil
 	}
 	raw := make([]byte, t.counts[idx])
-	if _, err := t.f.ReadAt(raw, t.offsets[idx]); err != nil && !errors.Is(err, io.EOF) {
+	n, err := t.f.ReadAt(raw, t.offsets[idx])
+	t.BytesRead += int64(n)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	var data []byte

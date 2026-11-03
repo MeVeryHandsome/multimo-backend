@@ -4,7 +4,6 @@ import (
 	"image"
 	"math"
 	"testing"
-	"time"
 
 	"multimo-backend/internal/testutil"
 )
@@ -37,13 +36,16 @@ func TestVisLocSatellite(t *testing.T) {
 		t.Fatalf("ground resolution %.3f m/px, expected ~0.26", res)
 	}
 
-	start := time.Now()
+	// The overview must sample rows, not read the raster: wall time depends
+	// on the disk cache (0.02 s warm, over a minute cold on network storage),
+	// so the test counts bytes instead.
+	before := f.BytesRead
 	ov, err := f.Overview(512)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if took := time.Since(start); took > 5*time.Second {
-		t.Fatalf("overview took %v", took)
+	if read, total := f.BytesRead-before, int64(f.Width)*int64(f.Height)*3; read > total/20 {
+		t.Fatalf("overview read %d of %d bytes", read, total)
 	}
 	if ov.Bounds().Dy() != 512 {
 		t.Fatalf("overview size %v", ov.Bounds())
