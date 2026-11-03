@@ -226,3 +226,108 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	}
 	return stdout.Bytes(), nil
 }
+
+// Scene is a frame where ffmpeg's scene-change score passed the threshold.
+type Scene struct {
+	Time  float64 `json:"time"`
+	Score float64 `json:"score"`
+}
+
+// SceneChanges runs ffmpeg's scene detector on a 320 px wide copy of the
+// stream (cheap to decode) and returns frames scoring above threshold (0..1).
+func SceneChanges(ctx context.Context, path string, threshold float64, threads int) ([]Scene, error) {
+	filter := fmt.Sprintf("scale=320:-2,select='gt(scene,%.3f)',metadata=print:file=-", threshold)
+	out, err := run(ctx, "ffmpeg", "-nostdin", "-loglevel", "error", "-threads", strconv.Itoa(max(threads, 1)),
+		"-i", path, "-an", "-vf", filter, "-f", "null", "-")
+	if err != nil {
+		return nil, err
+	}
+	return parseSceneMetadata(string(out)), nil
+}
+
+// parseSceneMetadata reads ffmpeg metadata=print output:
+//
+//	frame:12   pts:12288   pts_time:0.48
+//	lavfi.scene_score=0.512
+func parseSceneMetadata(out string) []Scene {
+	var scenes []Scene
+	cur := -1.0
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if i := strings.Index(line, "pts_time:"); i >= 0 {
+			f := strings.Fields(line[i+len("pts_time:"):])
+			if len(f) > 0 {
+				cur, _ = strconv.ParseFloat(f[0], 64)
+			}
+			continue
+		}
+		if v, ok := strings.CutPrefix(line, "lavfi.scene_score="); ok && cur >= 0 {
+			s, _ := strconv.ParseFloat(v, 64)
+			scenes = append(scenes, Scene{Time: cur, Score: s})
+			cur = -1
+		}
+	}
+	return scenes
+}
+
+// Signature is a tiny greyscale copy of one frame, for change detection.
+type Signature struct {
+	Time float64
+	Pix  []byte // SigW x SigH, row major
+}
+
+const SigW, SigH = 64, 36
+
+// FrameSignatures decodes the video once at fps frames per second into
+// 64x36 greyscale signatures. keyOnly decodes only key frames (about 3x
+// faster on long 1080p footage); between key frames the last one repeats.
+func FrameSignatures(ctx context.Context, path string, fps float64, threads int, keyOnly bool) ([]Signature, error) {
+	vf := fmt.Sprintf("fps=%g,scale=%d:%d,format=gray", fps, SigW, SigH)
+	args := []string{"-nostdin", "-loglevel", "error", "-threads", strconv.Itoa(max(threads, 1))}
+	if keyOnly {
+		args = append(args, "-skip_frame", "nokey")
+	}
+	args = append(args, "-i", path, "-an", "-vf", vf, "-f", "rawvideo", "-")
+	out, err := run(ctx, "ffmpeg", args...)
+	if err != nil {
+		return nil, err
+	}
+	n := len(out) / (SigW * SigH)
+	sigs := make([]Signature, n)
+	for i := 0; i < n; i++ {
+		sigs[i] = Signature{Time: float64(i) / fps, Pix: out[i*SigW*SigH : (i+1)*SigW*SigH]}
+	}
+	return sigs, nil
+}
+
+// Change is the brightness-normalised mean absolute difference of two
+// signatures, in 0..1.
+func Change(a, b []byte) float64 {
+	var ma, mb float64
+	for i := range a {
+		ma += float64(a[i])
+		mb += float64(b[i])
+	}
+	ma /= float64(len(a))
+	mb /= float64(len(b))
+	var d float64
+	for i := range a {
+		x := (float64(a[i]) - ma) - (float64(b[i]) - mb)
+		if x < 0 {
+			x = -x
+		}
+		d += x
+	}
+	return d / float64(len(a)) / 255
+}
+
+// Distinct counts signatures that differ from their predecessor.
+func Distinct(sigs []Signature) int {
+	n := 0
+	for i := range sigs {
+		if i == 0 || string(sigs[i].Pix) != string(sigs[i-1].Pix) {
+			n++
+		}
+	}
+	return n
+}

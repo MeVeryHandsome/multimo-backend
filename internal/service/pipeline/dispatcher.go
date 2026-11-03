@@ -37,6 +37,21 @@ func (e permanentError) Unwrap() error { return e.err }
 // Permanent wraps err so the task fails at once instead of being retried.
 func Permanent(err error) error { return permanentError{err} }
 
+// deferError asks for the task to run again later without counting an attempt.
+type deferError struct {
+	after  time.Duration
+	reason string
+}
+
+func (e deferError) Error() string { return "deferred: " + e.reason }
+
+// Defer re-queues the task after d without spending an attempt, for work
+// that waits on another task (e.g. a basemap still being indexed). A task is
+// deferred at most maxDefers times before it runs out of patience.
+func Defer(d time.Duration, reason string) error { return deferError{d, reason} }
+
+const maxDefers = 120
+
 // IsPermanent reports whether err (or anything it wraps) came from Permanent.
 func IsPermanent(err error) bool {
 	var p permanentError
@@ -87,7 +102,7 @@ func (d *Dispatcher) Enqueue(ctx context.Context, assetID int64, kind string) er
 	_, err := d.db.Exec(ctx, `
 		INSERT INTO tasks (asset_id, kind) VALUES (?, ?)
 		ON CONFLICT (asset_id, kind) DO UPDATE
-		SET status = 'pending', attempts = 0, progress = 0, message = NULL, error = NULL,
+		SET status = 'pending', attempts = 0, defers = 0, progress = 0, message = NULL, error = NULL,
 		    run_after = now(), started_at = NULL, finished_at = NULL, updated_at = now()
 		WHERE tasks.status <> 'running'`, assetID, kind)
 	if err == nil {
@@ -196,6 +211,17 @@ func (d *Dispatcher) execute(ctx context.Context, t *Task) {
 		// Interrupted by shutdown: put it back without spending an attempt.
 		d.db.Exec(bg, `UPDATE tasks SET status = 'pending', attempts = greatest(attempts - 1, 0), run_after = now(),
 			updated_at = now() WHERE id = ?`, t.ID) //nolint:errcheck
+		return
+	}
+	var def deferError
+	if errors.As(err, &def) {
+		res, _ := d.db.GetValue(bg, `UPDATE tasks SET status = 'pending', attempts = attempts - 1,
+			defers = defers + 1, message = ?, run_after = now() + make_interval(secs => ?), updated_at = now()
+			WHERE id = ? RETURNING defers`, def.reason, def.after.Seconds(), t.ID)
+		if res.Int() > maxDefers {
+			d.db.Exec(bg, `UPDATE tasks SET status = 'failed', error = ?, finished_at = now() WHERE id = ?`,
+				"gave up waiting: "+def.reason, t.ID) //nolint:errcheck
+		}
 		return
 	}
 	var perm permanentError

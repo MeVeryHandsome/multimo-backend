@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -35,6 +36,7 @@ const (
 	EndpointVLM       Endpoint = "vlm"
 	EndpointEmbedding Endpoint = "embedding"
 	EndpointDecision  Endpoint = "decision"
+	EndpointVision    Endpoint = "vision_embedding"
 )
 
 const (
@@ -105,7 +107,9 @@ type endpoint struct {
 
 type Gateway struct {
 	vlm, emb, dec *endpoint
+	vis           *endpoint
 	embDim        int
+	visDim        int
 	opts          Options
 	rec           Recorder
 	client        *http.Client
@@ -126,7 +130,9 @@ func New(cfg *config.Config, rec Recorder) *Gateway {
 		vlm:    mk(EndpointVLM, cfg.VLM.Endpoint, "/chat/completions"),
 		emb:    mk(EndpointEmbedding, cfg.Embedding.Endpoint, "/embeddings"),
 		dec:    mk(EndpointDecision, cfg.Decision.Endpoint, cfg.Decision.Path),
+		vis:    mk(EndpointVision, cfg.Vision.Endpoint, cfg.Vision.Path),
 		embDim: cfg.Embedding.Dim,
+		visDim: cfg.Vision.Dim,
 		opts: Options{MaxRetries: cfg.AI.MaxRetries, RetryBase: cfg.AI.RetryBase,
 			FallbackEnabled: cfg.AI.FallbackEnabled, LogPayloadChars: cfg.AI.LogPayloadChars},
 		rec:    rec,
@@ -186,6 +192,12 @@ func run[T any](ctx context.Context, g *Gateway, ep *endpoint, meta callMeta,
 		g.rec.Record(context.WithoutCancel(ctx), log)
 	}
 	useFallback := func(cause error) (T, bool, error) {
+		// A cancelled caller (shutdown, client gone) gets an error, never a
+		// substitute answer: the work will be redone, not faked.
+		if ctx.Err() != nil {
+			finish(StatusError, ctx.Err())
+			return zero, false, ctx.Err()
+		}
 		if fallback == nil || !g.opts.FallbackEnabled {
 			finish(StatusError, cause)
 			return zero, false, cause
@@ -319,3 +331,5 @@ func truncate(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
+
+func sqrt(x float64) float64 { return math.Sqrt(x) }

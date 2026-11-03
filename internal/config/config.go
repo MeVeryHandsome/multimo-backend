@@ -41,6 +41,22 @@ type Embedding struct {
 	Dim int
 }
 
+// VisionEmbedding is Aliyun's multimodal embedding (DashScope native API):
+// images and text share one vector space.
+type VisionEmbedding struct {
+	Endpoint
+	Path string
+	Dim  int
+}
+
+type Geo struct {
+	// MaxSpeedMPS bounds how far a drone can move between two photos when
+	// smoothing a visually located track.
+	MaxSpeedMPS float64
+	// TileScales are the basemap tile sides (metres) indexed for matching.
+	TileScales []int
+}
+
 type Decision struct {
 	Endpoint
 	// Path is appended to BaseURL; the StartLux decision API lives at /decisions.
@@ -71,11 +87,18 @@ type Storage struct {
 }
 
 type Video struct {
-	WorkerPoolSize     int
-	FFmpegThreads      int
-	SceneThreshold     float64
+	WorkerPoolSize int
+	FFmpegThreads  int
+	// ChangeThreshold is the mean absolute difference (0..1) between 64x36
+	// grey signatures that makes a frame a new keyframe. Continuous drone
+	// footage has no cuts, so ffmpeg scene scores stay near 0.01; content
+	// change works instead.
+	ChangeThreshold    float64
 	MaxKeyframes       int
 	MinKeyframeGapSecs float64
+	MaxKeyframeGapSecs float64
+	// KeyframeWidth is the stored keyframe width in pixels.
+	KeyframeWidth int
 }
 
 type Config struct {
@@ -85,6 +108,8 @@ type Config struct {
 	VLM       VLM
 	Embedding Embedding
 	Decision  Decision
+	Vision    VisionEmbedding
+	Geo       Geo
 	AI        AIPolicy
 	Video     Video
 }
@@ -146,6 +171,21 @@ func Load() *Config {
 			},
 			Path: env("DECISION_PATH", "/decisions"),
 		},
+		Vision: VisionEmbedding{
+			Endpoint: Endpoint{
+				BaseURL:        strings.TrimRight(env("VISION_EMBEDDING_BASE_URL", strings.TrimSuffix(vlm.BaseURL, "/compatible-mode/v1")), "/"),
+				APIKey:         env("VISION_EMBEDDING_API_KEY", vlm.APIKey),
+				Model:          env("VISION_EMBEDDING_MODEL", "tongyi-embedding-vision-plus-2026-03-06"),
+				Timeout:        time.Duration(envInt("VISION_EMBEDDING_TIMEOUT_SEC", 60)) * time.Second,
+				MaxConcurrency: envInt("VISION_EMBEDDING_MAX_CONCURRENCY", 6),
+			},
+			Path: env("VISION_EMBEDDING_PATH", "/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"),
+			Dim:  envInt("VISION_EMBEDDING_DIM", 1152),
+		},
+		Geo: Geo{
+			MaxSpeedMPS: envFloat("GEO_MAX_SPEED_MPS", 25),
+			TileScales:  envInts("GEO_TILE_SCALES", []int{250, 300, 400}),
+		},
 		AI: AIPolicy{
 			MaxRetries:      envInt("AI_MAX_RETRIES", 3),
 			RetryBase:       time.Duration(envInt("AI_RETRY_BASE_MS", 800)) * time.Millisecond,
@@ -155,9 +195,11 @@ func Load() *Config {
 		Video: Video{
 			WorkerPoolSize:     envInt("WORKER_POOL_SIZE", 4),
 			FFmpegThreads:      envInt("FFMPEG_THREADS", 2),
-			SceneThreshold:     envFloat("KEYFRAME_SCENE_THRESHOLD", 0.3),
+			ChangeThreshold:    envFloat("KEYFRAME_CHANGE_THRESHOLD", 0.08),
 			MaxKeyframes:       envInt("KEYFRAME_MAX_PER_VIDEO", 60),
 			MinKeyframeGapSecs: envFloat("KEYFRAME_MIN_INTERVAL_SEC", 2),
+			MaxKeyframeGapSecs: envFloat("KEYFRAME_MAX_INTERVAL_SEC", 15),
+			KeyframeWidth:      envInt("KEYFRAME_WIDTH", 1280),
 		},
 	}
 }
@@ -200,6 +242,23 @@ func envFloat(key string, def float64) float64 {
 		return v
 	}
 	return def
+}
+
+func envInts(key string, def []int) []int {
+	raw := env(key, "")
+	if raw == "" {
+		return def
+	}
+	var out []int
+	for _, p := range strings.Split(raw, ",") {
+		if v, err := strconv.Atoi(strings.TrimSpace(p)); err == nil && v > 0 {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
 }
 
 func envBool(key string, def bool) bool {

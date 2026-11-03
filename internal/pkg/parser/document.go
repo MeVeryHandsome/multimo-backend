@@ -193,20 +193,24 @@ func parseGeoJSON(path string) (*Document, error) {
 	if err := json.Unmarshal(raw, &fc); err != nil {
 		return nil, fmt.Errorf("geojson: %w", err)
 	}
-	nameKeys := []string{"name", "name_zh", "name_en", "nameascii", "NAME", "NAME_ZH"}
+	nameKeys := []string{"name", "name_zh", "name_en", "nameascii"}
 	infoKeys := []string{"featurecla", "type", "adm0name", "adm1name", "sov0name", "iata_code", "gps_code", "pop_max", "location", "abbrev"}
 	lines := make([]string, 0, len(fc.Features))
 	for _, f := range fc.Features {
+		props := make(map[string]any, len(f.Properties))
+		for k, v := range f.Properties {
+			props[strings.ToLower(k)] = v // Natural Earth full files use upper case
+		}
 		var parts []string
 		seen := map[string]bool{}
 		for _, k := range nameKeys {
-			if v, ok := f.Properties[k].(string); ok && v != "" && !seen[v] {
+			if v, ok := props[k].(string); ok && v != "" && !seen[v] {
 				parts = append(parts, v)
 				seen[v] = true
 			}
 		}
 		for _, k := range infoKeys {
-			if v, ok := f.Properties[k]; ok && v != nil && fmt.Sprint(v) != "" {
+			if v, ok := props[k]; ok && v != nil && fmt.Sprint(v) != "" {
 				parts = append(parts, k+"="+fmt.Sprint(v))
 			}
 		}

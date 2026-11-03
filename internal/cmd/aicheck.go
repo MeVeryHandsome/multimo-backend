@@ -79,6 +79,19 @@ var AICheck = gcmd.Command{
 			}
 			return fmt.Sprintf("%d vectors x %d dims", len(res.Vectors), len(res.Vectors[0])), nil
 		})
+		check("vision", gw.VisionModel(), func() (string, error) {
+			img, mime, err := checkImage(parser.GetOpt("image").String())
+			if err != nil {
+				return "", err
+			}
+			res, err := gw.EmbedMultimodal(ctx, "ai-check", 0, []llm.MMInput{
+				{Image: &llm.Image{Data: img, MIME: mime}}, {Text: "无人机航拍的停车场"}, {Text: "海上的帆船"}})
+			if err != nil {
+				return "", err
+			}
+			v := res.Vectors
+			return fmt.Sprintf("%d dims; image~停车场 %.3f, image~帆船 %.3f", len(v[0]), llm.Dot(v[0], v[1]), llm.Dot(v[0], v[2])), nil
+		})
 		check("decision", dec, func() (string, error) {
 			res, err := gw.Decide(ctx, llm.DecisionRequest{Purpose: "ai-check",
 				State: "无人机画面中，一辆公交车停在路口，周围有三辆小汽车。",

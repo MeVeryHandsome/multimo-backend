@@ -48,6 +48,7 @@ func newTestGateway(t *testing.T, handler http.HandlerFunc) (*Gateway, *memRecor
 		VLM:       config.VLM{Endpoint: ep, EnableThinking: "false"},
 		Embedding: config.Embedding{Endpoint: ep, Dim: 4},
 		Decision:  config.Decision{Endpoint: ep, Path: "/decisions"},
+		Vision:    config.VisionEmbedding{Endpoint: ep, Path: "/mm", Dim: 4},
 		AI:        config.AIPolicy{MaxRetries: 3, RetryBase: time.Millisecond, FallbackEnabled: true, LogPayloadChars: 80},
 	}
 	rec := &memRecorder{}
@@ -328,5 +329,68 @@ func TestExtractJSON(t *testing.T) {
 		if got := extractJSON(in); got != want {
 			t.Errorf("extractJSON(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestVisionEmbedBatchesAndNormalizes(t *testing.T) {
+	var calls atomic.Int32
+	g, rec := newTestGateway(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mm" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		calls.Add(1)
+		var req struct {
+			Model string
+			Input struct{ Contents []map[string]string }
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		emb := []any{}
+		for i, c := range req.Input.Contents {
+			if c["image"] != "" && !strings.HasPrefix(c["image"], "data:image/jpeg;base64,") {
+				t.Errorf("image not sent as data URL: %.40s", c["image"])
+			}
+			emb = append(emb, map[string]any{"index": len(req.Input.Contents) - 1 - i, "embedding": []float32{3, 4, 0, float32(i)}})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"output": map[string]any{"embeddings": emb},
+			"usage": map[string]int{"input_tokens": 400, "total_tokens": 401}})
+	})
+	in := []MMInput{{Text: "a"}, {Image: &Image{Data: []byte{1, 2}, Width: 2, Height: 1}}, {Text: "c"}, {Text: "d"}, {Text: "e"}}
+	res, err := g.EmbedMultimodal(context.Background(), "t", 0, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || len(res.Vectors) != 5 {
+		t.Fatalf("calls=%d vectors=%d", calls.Load(), len(res.Vectors))
+	}
+	var n float32
+	for _, x := range res.Vectors[0] {
+		n += x * x
+	}
+	if n < 0.999 || n > 1.001 {
+		t.Fatalf("vector not normalised: |v|^2 = %f", n)
+	}
+	if l := rec.last(t); l.Endpoint != EndpointVision || l.Usage.PromptTokens != 400 {
+		t.Fatalf("log = %+v", l)
+	}
+}
+
+func TestCancelledCallerGetsErrorNotFallback(t *testing.T) {
+	started := make(chan struct{})
+	g, rec := newTestGateway(t, func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select { // the server may not notice the client hanging up; don't block Close
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-started; cancel() }()
+	_, err := g.Chat(ctx, ChatRequest{Messages: []Message{{Text: "x"}},
+		Fallback: func() (string, error) { return "should not be used", nil }})
+	if err == nil {
+		t.Fatal("cancelled call returned a fallback answer")
+	}
+	if l := rec.last(t); l.Status != StatusError {
+		t.Fatalf("log = %+v", l)
 	}
 }

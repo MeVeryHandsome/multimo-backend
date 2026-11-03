@@ -18,13 +18,18 @@ import (
 	"multimo-backend/internal/config"
 	"multimo-backend/internal/consts"
 	assetctl "multimo-backend/internal/controller/asset"
+	kfctl "multimo-backend/internal/controller/keyframe"
 	"multimo-backend/internal/controller/system"
 	taskctl "multimo-backend/internal/controller/task"
+	"multimo-backend/internal/model/entity"
 	"multimo-backend/internal/pkg/llm"
 	"multimo-backend/internal/pkg/migrate"
 	"multimo-backend/internal/pkg/workerpool"
+	"multimo-backend/internal/service/analyze"
 	"multimo-backend/internal/service/asset"
+	"multimo-backend/internal/service/geo"
 	"multimo-backend/internal/service/ingest"
+	"multimo-backend/internal/service/keyframe"
 	"multimo-backend/internal/service/pipeline"
 	"multimo-backend/manifest"
 )
@@ -60,7 +65,8 @@ func newApp(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	db := g.DB()
-	if err := migrate.WaitAndUp(ctx, db, manifest.Migrations, cfg.Embedding.Dim, 90*time.Second); err != nil {
+	if err := migrate.WaitAndUp(ctx, db, manifest.Migrations,
+		migrate.Vars{"EMBEDDING_DIM": cfg.Embedding.Dim, "VISION_EMBEDDING_DIM": cfg.Vision.Dim}, 90*time.Second); err != nil {
 		return nil, fmt.Errorf("database: %w", err)
 	}
 	dataDir, err := filepath.Abs(cfg.Storage.DataDir)
@@ -78,7 +84,32 @@ func newApp(ctx context.Context) (*App, error) {
 	app.Dispatcher = pipeline.New(db, workerpool.New(cfg.Video.WorkerPoolSize))
 	app.Ingest = &ingest.Service{Assets: app.Assets, DB: db, Dispatcher: app.Dispatcher,
 		TestdataDir: testdata, FFmpegThreads: cfg.Video.FFmpegThreads}
+	video := cfg.Video
+	kf := &keyframe.Service{Assets: app.Assets, DB: db, Dispatcher: app.Dispatcher, AI: app.AI, Video: video}
+	an := &analyze.Service{Assets: app.Assets, DB: db, Dispatcher: app.Dispatcher, AI: app.AI,
+		Concurrency: cfg.VLM.MaxConcurrency}
+	gs := &geo.Service{Assets: app.Assets, DB: db, Dispatcher: app.Dispatcher, AI: app.AI, Geo: cfg.Geo}
+
+	// ingest -> keyframes -> analyze -> geo; basemaps also get a tile index.
+	app.Ingest.Next = func(a *entity.Asset) []string {
+		if a.Type == "document" {
+			return nil
+		}
+		return []string{keyframe.Kind}
+	}
+	kf.Next = func(a *entity.Asset) []string {
+		if geo.IsBasemap(a) {
+			return []string{analyze.Kind, geo.BasemapKind}
+		}
+		return []string{analyze.Kind}
+	}
+	an.Next = func(a *entity.Asset) []string { return []string{geo.Kind} }
+
 	app.Dispatcher.Register(ingest.Kind, app.Ingest.Handle)
+	app.Dispatcher.Register(keyframe.Kind, kf.Handle)
+	app.Dispatcher.Register(analyze.Kind, an.Handle)
+	app.Dispatcher.Register(geo.Kind, gs.Handle)
+	app.Dispatcher.Register(geo.BasemapKind, gs.HandleBasemap)
 	return app, nil
 }
 
@@ -119,6 +150,7 @@ func runHTTP(ctx context.Context) error {
 			system.NewV1(),
 			&assetctl.ControllerV1{Assets: app.Assets, Ingest: app.Ingest, Dispatcher: app.Dispatcher},
 			&taskctl.ControllerV1{DB: app.DB},
+			&kfctl.ControllerV1{DB: app.DB, Assets: app.Assets, Dispatcher: app.Dispatcher},
 		)
 	})
 	g.Log().Infof(ctx, "multimo %s listening on %s, db %s, data %s, workers %d",

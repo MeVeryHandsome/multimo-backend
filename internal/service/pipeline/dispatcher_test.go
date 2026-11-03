@@ -71,6 +71,13 @@ func TestDispatcherRetriesBoundsAndFails(t *testing.T) {
 		return Permanent(errors.New("unsupported format"))
 	})
 	d.Register("panics", func(ctx context.Context, task *Task, report Reporter) error { panic("bad") })
+	var waits atomic.Int32
+	d.Register("waits", func(ctx context.Context, task *Task, report Reporter) error {
+		if waits.Add(1) <= 5 { // more defers than max_attempts, none of them counted
+			return Defer(10*time.Millisecond, "dependency not ready")
+		}
+		return nil
+	})
 
 	for i := 0; i < 8; i++ {
 		if err := d.Enqueue(ctx, insertAsset(t, db, i), "work"); err != nil {
@@ -80,12 +87,14 @@ func TestDispatcherRetriesBoundsAndFails(t *testing.T) {
 	d.Enqueue(ctx, insertAsset(t, db, 100), "flaky")
 	d.Enqueue(ctx, insertAsset(t, db, 101), "broken")
 	d.Enqueue(ctx, insertAsset(t, db, 102), "panics")
+	d.Enqueue(ctx, insertAsset(t, db, 103), "waits")
 
 	go d.Run(ctx)
 	waitFor(t, db, "kind = 'work' AND status = 'done' AND progress = 1", 8)
 	waitFor(t, db, "kind = 'flaky' AND status = 'done' AND attempts = 3", 1)
 	waitFor(t, db, "kind = 'broken' AND status = 'failed' AND attempts = 1", 1)
 	waitFor(t, db, "kind = 'panics' AND status = 'failed' AND attempts = 3 AND error LIKE 'panic%'", 1)
+	waitFor(t, db, "kind = 'waits' AND status = 'done' AND attempts = 1", 1)
 	if peak.Load() > 2 {
 		t.Fatalf("peak concurrency %d exceeds pool size 2", peak.Load())
 	}

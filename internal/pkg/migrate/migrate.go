@@ -17,13 +17,17 @@ import (
 // lockKey serialises migrations when several backend instances start together.
 const lockKey = 724115001
 
+// Vars are placeholders substituted into migration SQL, e.g.
+// {"EMBEDDING_DIM": 1024} replaces {{EMBEDDING_DIM}}.
+type Vars map[string]int
+
 // Up applies every migration in fsys (sql/*.sql) not yet recorded in
-// schema_migrations. {{EMBEDDING_DIM}} in the SQL is replaced with dim.
+// schema_migrations, after substituting vars.
 //
 // Each migration runs in its own transaction holding a transaction-scoped
 // advisory lock, and re-checks schema_migrations after taking the lock, so
 // concurrent instances apply each migration exactly once.
-func Up(ctx context.Context, db gdb.DB, fsys fs.FS, dim int) ([]string, error) {
+func Up(ctx context.Context, db gdb.DB, fsys fs.FS, vars Vars) ([]string, error) {
 	if _, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    TEXT PRIMARY KEY,
 		applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
@@ -42,7 +46,13 @@ func Up(ctx context.Context, db gdb.DB, fsys fs.FS, dim int) ([]string, error) {
 		if err != nil {
 			return applied, err
 		}
-		sql := strings.ReplaceAll(string(raw), "{{EMBEDDING_DIM}}", strconv.Itoa(dim))
+		sql := string(raw)
+		for k, v := range vars {
+			sql = strings.ReplaceAll(sql, "{{"+k+"}}", strconv.Itoa(v))
+		}
+		if i := strings.Index(sql, "{{"); i >= 0 {
+			return applied, fmt.Errorf("migration %s: unresolved placeholder near %q", version, sql[i:min(i+40, len(sql))])
+		}
 		ran := false
 		err = db.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 			if _, err := tx.Exec("SELECT pg_advisory_xact_lock(?)", lockKey); err != nil {
@@ -76,10 +86,10 @@ func Up(ctx context.Context, db gdb.DB, fsys fs.FS, dim int) ([]string, error) {
 
 // WaitAndUp retries until the database accepts connections (compose may start
 // the backend before postgres finishes recovery), then applies migrations.
-func WaitAndUp(ctx context.Context, db gdb.DB, fsys fs.FS, dim int, timeout time.Duration) error {
+func WaitAndUp(ctx context.Context, db gdb.DB, fsys fs.FS, vars Vars, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		applied, err := Up(ctx, db, fsys, dim)
+		applied, err := Up(ctx, db, fsys, vars)
 		if err == nil {
 			if len(applied) > 0 {
 				g.Log().Infof(ctx, "applied migrations: %v", applied)

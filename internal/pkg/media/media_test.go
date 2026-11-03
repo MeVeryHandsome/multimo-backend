@@ -72,3 +72,25 @@ func TestFilenameTime(t *testing.T) {
 		t.Fatal("false positive")
 	}
 }
+
+func TestParseSceneMetadata(t *testing.T) {
+	out := "frame:0    pts:12288   pts_time:0.48\nlavfi.scene_score=0.512\nframe:1    pts:99999   pts_time:3.9\nlavfi.scene_score=0.31\n"
+	s := parseSceneMetadata(out)
+	if len(s) != 2 || s[0].Time != 0.48 || s[1].Score != 0.31 {
+		t.Fatalf("got %+v", s)
+	}
+}
+
+func TestSceneChangesRealVideo(t *testing.T) {
+	src := testutil.Testdata(t, "video/visdrone_vid_val/mp4/uav0000086_00000_v.mp4")
+	s, err := SceneChanges(context.Background(), src, 0.1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range s {
+		if x.Score <= 0.1 || x.Time < 0 || x.Time > 20 {
+			t.Fatalf("bad scene %+v", x)
+		}
+	}
+	t.Logf("%d scene changes above 0.1", len(s))
+}

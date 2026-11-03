@@ -40,7 +40,7 @@ func DB(t *testing.T) gdb.DB {
 
 	db := open(t, schema+",public")
 	t.Cleanup(func() { db.Close(context.Background()) }) //nolint:errcheck
-	if _, err := migrate.Up(ctx, db, manifest.Migrations, 1024); err != nil {
+	if _, err := migrate.Up(ctx, db, manifest.Migrations, migrate.Vars{"EMBEDDING_DIM": 1024, "VISION_EMBEDDING_DIM": 1152}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db

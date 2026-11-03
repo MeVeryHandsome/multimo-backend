@@ -49,9 +49,26 @@ make run
 | GET | `/api/v1/assets/{id}/thumbnail` | 缩略图（JPEG） |
 | POST | `/api/v1/assets/{id}/reprocess` | 重新处理 |
 | DELETE | `/api/v1/assets/{id}` | 删除记录和派生文件 |
+| GET | `/api/v1/assets/{id}/keyframes` | 关键帧列表：描述、标签、定位、检测框数量 |
+| GET | `/api/v1/keyframes/{id}` | 关键帧详情：检测框（像素坐标）、分析结果、定位候选 |
+| GET | `/api/v1/keyframes/{id}/image` | 关键帧图片（JPEG） |
+| GET | `/api/v1/assets/{id}/track` | 飞行轨迹（来自配套飞行记录，已对齐到视频时间轴） |
+| POST | `/api/v1/pipeline/rerun` | 按条件批量重跑某个处理阶段 |
 | GET | `/api/v1/tasks` | 处理任务列表 |
 | GET | `/api/v1/system/ai-calls` | AI 调用汇总（token、延迟、降级次数）和最近记录 |
 | GET | `/api/v1/system/stats` | 数据概况 |
+
+## 处理链
+
+`ingest → keyframes → analyze → geo`，卫星底图另加 `basemap`，每一步是 `tasks` 表中的一个任务：
+
+| 阶段 | 做什么 |
+| :--- | :--- |
+| ingest | 识别类型、元数据、缩略图；文档抽文本并切块 |
+| keyframes | 视频按内容变化选帧（图片/遥感一帧）；多模态向量；相似帧去重 |
+| analyze | VLM 描述、场景标签、目标框（0~1000 相对坐标换算为像素）、地标、文字、地点猜测；文本向量 |
+| geo | 飞行记录 / EXIF / 容器 GPS → 地名库粗定位 → 底图视觉匹配 + 航迹平滑 |
+| basemap | 大幅 GeoTIFF 按 250/300/400 m 切块并计算多模态向量 |
 
 ## 测试
 
@@ -75,7 +92,10 @@ go test -race ./...
 | `internal/controller` | HTTP 控制器 |
 | `internal/service/asset` | 素材存储与查询 |
 | `internal/service/ingest` | 上传、登记、第一步处理（元数据、缩略图、文档切块） |
-| `internal/service/pipeline` | 持久化任务队列：领取、重试、失败处理 |
+| `internal/service/pipeline` | 持久化任务队列：领取、重试、延后、失败处理 |
+| `internal/service/keyframe` | 关键帧选取与图像向量 |
+| `internal/service/analyze` | VLM 关键帧分析与检测框 |
+| `internal/service/geo` | 飞行记录对齐、地名库、底图索引、视觉定位与航迹平滑 |
 | `internal/pkg/llm` | AI 网关：VLM、Embedding、Decision，重试、降级、调用日志 |
 | `internal/pkg/media` | ffprobe 元数据、抽帧、缩略图 |
 | `internal/pkg/parser` | 文件类型识别；图像 EXIF；PDF、DOC、DOCX、TXT、CSV、GeoJSON 文本 |

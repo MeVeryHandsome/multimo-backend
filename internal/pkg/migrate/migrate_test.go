@@ -13,7 +13,7 @@ func TestUpIsIdempotent(t *testing.T) {
 	db := testutil.DB(t) // already migrated once
 	ctx := context.Background()
 
-	again, err := migrate.Up(ctx, db, manifest.Migrations, 1024)
+	again, err := migrate.Up(ctx, db, manifest.Migrations, migrate.Vars{"EMBEDDING_DIM": 1024, "VISION_EMBEDDING_DIM": 1152})
 	if err != nil {
 		t.Fatal(err)
 	}
