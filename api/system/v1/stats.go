@@ -39,9 +39,10 @@ type CountRow struct {
 	Count int    `json:"count"`
 }
 type StatsRes struct {
-	AssetsByType   []CountRow `json:"assetsByType"`
-	AssetsByStatus []CountRow `json:"assetsByStatus"`
-	TasksByStatus  []CountRow `json:"tasksByStatus"`
-	DocChunks      int        `json:"docChunks"`
-	Keyframes      int        `json:"keyframes"`
+	AssetsByType       []CountRow `json:"assetsByType"`
+	AssetsByStatus     []CountRow `json:"assetsByStatus"`
+	AssetsByCollection []CountRow `json:"assetsByCollection"`
+	TasksByStatus      []CountRow `json:"tasksByStatus"`
+	DocChunks          int        `json:"docChunks"`
+	Keyframes          int        `json:"keyframes"`
 }

@@ -86,3 +86,36 @@ type RerunReq struct {
 type RerunRes struct {
 	Queued int `json:"queued"`
 }
+
+type GeoOverviewReq struct {
+	g.Meta     `path:"/geo/overview" method:"get" tags:"Keyframe" summary:"地图概览" dc:"所有已定位的关键帧位置，以及带地理参考的底图范围（用于在地图上叠加概览图）"`
+	Collection string `json:"collection" dc:"限定集合"`
+}
+type GeoPoint struct {
+	KeyframeId   int64    `json:"keyframeId"   orm:"keyframe_id"`
+	AssetId      int64    `json:"assetId"      orm:"asset_id"`
+	AssetType    string   `json:"assetType"    orm:"asset_type"`
+	Collection   string   `json:"collection"   orm:"collection"`
+	Filename     string   `json:"filename"     orm:"filename"`
+	TsSec        float64  `json:"tsSec"        orm:"ts_sec"`
+	Lat          float64  `json:"lat"          orm:"lat"`
+	Lon          float64  `json:"lon"          orm:"lon"`
+	GeoSource    string   `json:"geoSource"    orm:"geo_source"`
+	GeoAccuracyM *float64 `json:"geoAccuracyM" orm:"geo_accuracy_m"`
+	ImageUrl     string   `json:"imageUrl"`
+}
+type Basemap struct {
+	AssetId      int64   `json:"assetId"`
+	Filename     string  `json:"filename"`
+	Collection   string  `json:"collection"`
+	West         float64 `json:"west"`
+	South        float64 `json:"south"`
+	East         float64 `json:"east"`
+	North        float64 `json:"north"`
+	ThumbnailUrl string  `json:"thumbnailUrl"`
+}
+type GeoOverviewRes struct {
+	Points   []*GeoPoint `json:"points"`
+	Basemaps []*Basemap  `json:"basemaps"`
+	TileUrl  string      `json:"tileUrl" dc:"背景瓦片地址模板（MAP_TILE_URL），为空时不加载在线瓦片"`
+}

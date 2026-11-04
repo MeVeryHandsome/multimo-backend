@@ -60,15 +60,20 @@ type kfDet struct {
 	Width   int     `orm:"width"`
 	Height  int     `orm:"height"`
 	Source  string  `orm:"description_source"`
+	BoxSrc  string  `orm:"box_source"`
 	Counts  string  `orm:"counts"`
 }
+
+// analysed reports whether the keyframe's boxes come from a model (the VLM
+// or the detector) rather than the local fallback, which draws none.
+func (k kfDet) analysed() bool { return k.Source == "vlm" || k.BoxSrc == "detector" }
 
 // keyframeDetections returns an asset's keyframes and their boxes scaled to
 // the original image size.
 func (s *Suite) keyframeDetections(ctx context.Context, assetID int64, origW, origH int) ([]kfDet, map[int64][]Pred, error) {
 	var kfs []kfDet
 	if err := s.DB.Model("keyframes").Ctx(ctx).Fields("id, frame_no, ts_sec, width, height, description_source, "+
-		"meta->'analysis'->>'counts' AS counts").Where("asset_id", assetID).OrderAsc("idx").Scan(&kfs); err != nil {
+		"coalesce(meta->'analysis'->>'box_source', '') AS box_source, meta->'analysis'->>'counts' AS counts").Where("asset_id", assetID).OrderAsc("idx").Scan(&kfs); err != nil {
 		return nil, nil, err
 	}
 	rows, err := s.DB.GetAll(ctx, `SELECT keyframe_id, label, x, y, w, h FROM detections WHERE asset_id = ?`, assetID)
@@ -166,7 +171,7 @@ func (s *Suite) keyframe(ctx context.Context) (*KeyframeSection, error) {
 		}
 		kv := KeyframeVideo{ID: v.ID, Keyframes: len(kfs)}
 		for _, k := range kfs {
-			if k.FrameNo == nil || k.Source != "vlm" {
+			if k.FrameNo == nil || !k.analysed() {
 				continue
 			}
 			gt := frames[*k.FrameNo+1] // annotations count frames from 1
@@ -278,7 +283,9 @@ type DetectionSection struct {
 	GroupPrec     float64    `json:"groupedPrecision"`
 	GroupMissRate float64    `json:"groupedMissRate"`
 	PerClass      []ClassRow `json:"perClass"`
-	Skipped       []string   `json:"skipped,omitempty"`
+	// BoxSources counts images by who drew the boxes (detector, vlm).
+	BoxSources map[string]int `json:"boxSources"`
+	Skipped    []string       `json:"skipped,omitempty"`
 }
 
 type ClassRow struct {
@@ -306,7 +313,7 @@ func (s *Suite) detection(ctx context.Context) (*DetectionSection, error) {
 	if err != nil {
 		return nil, err
 	}
-	sec := &DetectionSection{}
+	sec := &DetectionSection{BoxSources: map[string]int{}}
 	gtPer, predPer, perClass := map[string]int{}, map[string]int{}, map[string]Match{}
 	var raw Match
 	for _, d := range gts {
@@ -323,12 +330,17 @@ func (s *Suite) detection(ctx context.Context) (*DetectionSection, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(kfs) == 0 || kfs[0].Source != "vlm" {
+		if len(kfs) == 0 || !kfs[0].analysed() {
 			sec.Skipped = append(sec.Skipped, d.ID+": no VLM analysis")
 			continue
 		}
 		p := preds[kfs[0].ID]
 		sec.Images++
+		src := kfs[0].BoxSrc
+		if src == "" {
+			src = "vlm"
+		}
+		sec.BoxSources[src]++
 		sec.Exact.Add(MatchBoxes(p, gt, sameClass, nil))
 		sec.Grouped.Add(MatchBoxes(p, gt, sameGroup, nil))
 		// Without the ignore protocol: every unmatched prediction is an error.

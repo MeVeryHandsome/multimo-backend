@@ -1,10 +1,12 @@
 // Package llm is the single way the backend talks to AI models.
 //
-// It wraps three endpoints behind one policy:
+// It wraps these endpoints behind one policy:
 //
 //   - VLM: OpenAI-compatible chat/completions, with image input and JSON mode
 //   - Embedding: OpenAI-compatible embeddings
-//   - Decision: the StartLux /decisions API (choice and score questions)
+//   - Vision embedding: DashScope multimodal embeddings (images and text)
+//   - Decision: the StartLux decisions API (choice and score questions)
+//   - Detector: the VisDrone object detector service (optional)
 //
 // Every call gets a per-endpoint concurrency limit, up to 1+MaxRetries attempts
 // with exponential backoff on network errors, 429 and 5xx, a local fallback
@@ -37,6 +39,7 @@ const (
 	EndpointEmbedding Endpoint = "embedding"
 	EndpointDecision  Endpoint = "decision"
 	EndpointVision    Endpoint = "vision_embedding"
+	EndpointDetector  Endpoint = "detector"
 )
 
 const (
@@ -108,6 +111,9 @@ type endpoint struct {
 type Gateway struct {
 	vlm, emb, dec *endpoint
 	vis           *endpoint
+	det           *endpoint
+	detConf       float64
+	detTypes      []string
 	embDim        int
 	visDim        int
 	opts          Options
@@ -127,18 +133,22 @@ func New(cfg *config.Config, rec Recorder) *Gateway {
 			model: e.Model, timeout: e.Timeout, sem: make(chan struct{}, n), disabled: !e.Configured()}
 	}
 	g := &Gateway{
-		vlm:    mk(EndpointVLM, cfg.VLM.Endpoint, "/chat/completions"),
-		emb:    mk(EndpointEmbedding, cfg.Embedding.Endpoint, "/embeddings"),
-		dec:    mk(EndpointDecision, cfg.Decision.Endpoint, cfg.Decision.Path),
-		vis:    mk(EndpointVision, cfg.Vision.Endpoint, cfg.Vision.Path),
-		embDim: cfg.Embedding.Dim,
-		visDim: cfg.Vision.Dim,
+		vlm:      mk(EndpointVLM, cfg.VLM.Endpoint, "/chat/completions"),
+		emb:      mk(EndpointEmbedding, cfg.Embedding.Endpoint, "/embeddings"),
+		dec:      mk(EndpointDecision, cfg.Decision.Endpoint, cfg.Decision.Path),
+		vis:      mk(EndpointVision, cfg.Vision.Endpoint, cfg.Vision.Path),
+		det:      mk(EndpointDetector, cfg.Detector.Endpoint, "/v1/detect"),
+		detConf:  cfg.Detector.Conf,
+		detTypes: cfg.Detector.Types,
+		embDim:   cfg.Embedding.Dim,
+		visDim:   cfg.Vision.Dim,
 		opts: Options{MaxRetries: cfg.AI.MaxRetries, RetryBase: cfg.AI.RetryBase,
 			FallbackEnabled: cfg.AI.FallbackEnabled, LogPayloadChars: cfg.AI.LogPayloadChars},
 		rec:    rec,
 		client: &http.Client{},
 		sleep:  sleepCtx,
 	}
+	g.det.disabled = !cfg.Detector.Enabled() // the detector key is optional
 	switch strings.ToLower(cfg.VLM.EnableThinking) {
 	case "true":
 		g.vlm.extra = map[string]any{"enable_thinking": true}
@@ -292,7 +302,9 @@ func (g *Gateway) postJSON(ctx context.Context, ep *endpoint, body any, out any)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+ep.apiKey)
+	if ep.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+ep.apiKey)
+	}
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return err

@@ -22,7 +22,7 @@ func collectMetrics(r *Report) []Metric {
 		m = append(m,
 			Metric{ID: "detection_precision", Name: "目标识别准确率", Value: d.Precision, Display: pct(d.Precision),
 				Target: "≥ 85%", Pass: d.Precision >= 0.85, Primary: true,
-				Note: fmt.Sprintf("类别一致；按大类 %s；不排除不可见目标时 %s", pct(d.GroupPrec), pct(d.RawPrecision))},
+				Note: fmt.Sprintf("%s类别一致；按大类 %s；不排除不可见目标时 %s", boxSourceNote(d, r.Models["detector"]), pct(d.GroupPrec), pct(d.RawPrecision))},
 			Metric{ID: "detection_miss", Name: "目标识别漏检率", Value: d.MissRate, Display: pct(d.MissRate),
 				Target: "≤ 5%", Pass: d.MissRate <= 0.05, Primary: true, Note: "按大类 " + pct(d.GroupMissRate)})
 	}
@@ -53,4 +53,15 @@ func collectMetrics(r *Report) []Metric {
 			Pass: a.Accuracy >= 0.80, Primary: true, Note: fmt.Sprintf("平均评分 %.2f / 2", a.MeanGrade)})
 	}
 	return m
+}
+
+// boxSourceNote says who drew the boxes that were scored.
+func boxSourceNote(d *DetectionSection, detector string) string {
+	if n := d.BoxSources["detector"]; n > 0 {
+		if n == d.Images {
+			return "检测模型 " + detector + "；"
+		}
+		return fmt.Sprintf("检测模型 %s（%d/%d 张）；", detector, n, d.Images)
+	}
+	return "视觉模型画框；"
 }

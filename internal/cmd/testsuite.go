@@ -23,7 +23,7 @@ import (
 // HTML and Markdown reports.
 var Testsuite = gcmd.Command{
 	Name:  "testsuite",
-	Usage: "multimo testsuite [-only keyframe,qa] [-out dir] [-register] [-concurrency 4] [-strict]",
+	Usage: "multimo testsuite [-only keyframe,qa] [-out dir] [-register] [-concurrency 4] [-strict] | -render dir",
 	Brief: "按 testdata/benchmark 运行评测，输出 test_report.json / .html / .md",
 	Arguments: []gcmd.Argument{
 		{Name: "only", Short: "o", Brief: "只运行这些部分（逗号分隔）：formats,keyframe,detection,geo,retrieval,qa"},
@@ -31,8 +31,20 @@ var Testsuite = gcmd.Command{
 		{Name: "register", Short: "r", Orphan: true, Brief: "先登记 benchmark/corpus.json 中的素材，并在本进程内处理完队列"},
 		{Name: "concurrency", Short: "c", Brief: "检索和问答的并发数，默认 4"},
 		{Name: "strict", Orphan: true, Brief: "有核心指标未达标时以退出码 1 结束"},
+		{Name: "render", Brief: "不运行评测，只按已保存的 test_report.json 重新生成 HTML 和 Markdown"},
 	},
 	Func: func(ctx context.Context, parser *gcmd.Parser) error {
+		if dir := parser.GetOpt("render").String(); dir != "" {
+			rep, err := testsuite.Load(dir)
+			if err != nil {
+				return err
+			}
+			if err := rep.Save(dir); err != nil {
+				return err
+			}
+			fmt.Println(filepath.Join(dir, testsuite.HTMLFile))
+			return nil
+		}
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		app, err := newApp(ctx)

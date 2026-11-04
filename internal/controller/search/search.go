@@ -15,7 +15,7 @@ type ControllerV1 struct {
 }
 
 func (c *ControllerV1) Search(ctx context.Context, req *v1.SearchReq) (*v1.SearchRes, error) {
-	res, err := c.Svc.Search(ctx, svc.Request{Query: req.Query, Collections: req.Collections, Types: req.Types,
+	res, err := c.Svc.Search(ctx, svc.Request{Query: req.Query, Collections: req.Collections, Types: req.Types, AssetIDs: req.AssetIds,
 		TopK: req.TopK, GroupBy: req.GroupBy, NoRerank: req.NoRerank, Filters: req.Filters})
 	if err != nil {
 		return nil, gerror.WrapCode(gcode.CodeInternalError, err, "检索失败")

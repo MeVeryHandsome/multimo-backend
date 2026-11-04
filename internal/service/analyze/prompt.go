@@ -1,6 +1,10 @@
 package analyze
 
-import "strings"
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
 
 // Labels is the detection vocabulary: VisDrone classes for drone footage and
 // DOTA classes for remote sensing.
@@ -58,10 +62,48 @@ const promptTemplate = `这是一张{HINT}。请仔细观察后，只返回一�
 - bbox_2d 使用相对坐标，取值 0~1000：x 为横向位置 ×1000/图像宽度，y 为纵向位置 ×1000/图像高度。
 - counts 统计画面中每个类别的总数（可以超过框的数量）。`
 
+// labelOrder lists the detection vocabulary in prompt order.
+var labelOrder = []string{"pedestrian", "people", "bicycle", "car", "van", "truck", "tricycle", "awning-tricycle", "bus",
+	"motor", "plane", "ship", "storage-tank", "baseball-diamond", "tennis-court", "basketball-court",
+	"ground-track-field", "harbor", "bridge", "large-vehicle", "small-vehicle", "helicopter", "roundabout",
+	"soccer-ball-field", "swimming-pool", "container-crane", "airport", "helipad"}
+
 func buildPrompt(assetType string) string {
-	order := []string{"pedestrian", "people", "bicycle", "car", "van", "truck", "tricycle", "awning-tricycle", "bus",
-		"motor", "plane", "ship", "storage-tank", "baseball-diamond", "tennis-court", "basketball-court",
-		"ground-track-field", "harbor", "bridge", "large-vehicle", "small-vehicle", "helicopter", "roundabout",
-		"soccer-ball-field", "swimming-pool", "container-crane", "airport", "helipad"}
-	return strings.NewReplacer("{HINT}", hintFor(assetType), "{LABELS}", strings.Join(order, ", ")).Replace(promptTemplate)
+	return strings.NewReplacer("{HINT}", hintFor(assetType), "{LABELS}", strings.Join(labelOrder, ", ")).Replace(promptTemplate)
+}
+
+// DetectorLabels are the classes the VisDrone detector reports. When the
+// detector handles a keyframe, these counts come from it.
+var DetectorLabels = []string{"pedestrian", "people", "bicycle", "car", "van", "truck", "tricycle",
+	"awning-tricycle", "bus", "motor"}
+
+// buildPromptWithDetections asks the VLM for the description and attributes
+// only: the boxes come from the detector, whose counts it is given so the
+// caption and counts agree with the boxes.
+func buildPromptWithDetections(assetType string, counts map[string]int) string {
+	p := buildPrompt(assetType)
+	p = strings.Replace(p, "  \"objects\": [{\"label\": \"类别\", \"bbox_2d\": [x1, y1, x2, y2]}],\n", "", 1)
+	if i := strings.Index(p, "目标检测要求："); i >= 0 {
+		p = p[:i]
+	}
+	var found []string
+	for _, l := range DetectorLabels {
+		if counts[l] > 0 {
+			found = append(found, fmt.Sprintf("%s（%s）%d", Labels[l], l, counts[l]))
+		}
+	}
+	summary := "没有检测到目标"
+	if len(found) > 0 {
+		summary = strings.Join(found, "、")
+	}
+	other := make([]string, 0, len(Labels))
+	for _, l := range labelOrder {
+		if !slices.Contains(DetectorLabels, l) {
+			other = append(other, l)
+		}
+	}
+	return p + "目标框已由专用检测模型给出，不需要输出 objects。检测结果：" + summary + "。\n" +
+		"- description 中提到这些类别的数量时以检测结果为准，不要自己重新数。\n" +
+		"- counts 中 " + strings.Join(DetectorLabels, "/") + " 直接照抄检测结果；画面中其他类别的目标按以下英文类别补充：" +
+		strings.Join(other, ", ") + "。"
 }

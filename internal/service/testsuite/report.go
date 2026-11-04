@@ -31,7 +31,10 @@ var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 		}
 		return "未达标"
 	},
-	"def":   func(r *Report, k string) string { return r.Definitions[k] },
+	"def": func(r *Report, k string) string { return r.Definitions[k] },
+	"modelName": func(k string) string {
+		return map[string]string{"vlm": "视觉模型", "detector": "目标检测", "embedding": "文本向量", "vision_embedding": "图像向量", "decision": "决策模型"}[k]
+	},
 	"time":  func(r *Report) string { return r.GeneratedAt.Local().Format("2006-01-02 15:04:05 MST") },
 	"base":  filepath.Base,
 	"hit":   func(p string) bool { return strings.HasPrefix(p, "*") },
@@ -61,7 +64,7 @@ var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 	},
 	"models": func(m map[string]string) [][2]string {
 		var out [][2]string
-		for _, k := range []string{"vlm", "embedding", "vision_embedding", "decision"} {
+		for _, k := range []string{"vlm", "detector", "embedding", "vision_embedding", "decision"} {
 			if v, ok := m[k]; ok {
 				out = append(out, [2]string{k, v})
 			}
@@ -130,7 +133,7 @@ func (r *Report) Markdown() string {
 		}
 	}
 	w("# Multimo 评测报告\n\n")
-	w("生成时间 %s · 版本 %s · 耗时 %.0f 秒 · 核心指标 %d/%d 达标\n\n", r.GeneratedAt.Local().Format("2006-01-02 15:04 MST"), r.Version, r.DurationSec, passed, n)
+	w("生成时间：%s；版本：%s；耗时 %.0f 秒；核心指标 %d/%d 达标。\n\n", r.GeneratedAt.Local().Format("2006-01-02 15:04 MST"), r.Version, r.DurationSec, passed, n)
 	w("| 指标 | 结果 | 目标 | 结论 | 说明 |\n|---|---|---|---|---|\n")
 	for _, m := range r.Metrics {
 		v := "参考"
@@ -141,7 +144,7 @@ func (r *Report) Markdown() string {
 	}
 	w("\n模型：")
 	var ms []string
-	for _, kv := range [][2]string{{"VLM", r.Models["vlm"]}, {"Embedding", r.Models["embedding"]}, {"Vision embedding", r.Models["vision_embedding"]}, {"Decision", r.Models["decision"]}} {
+	for _, kv := range [][2]string{{"VLM", r.Models["vlm"]}, {"Detector", r.Models["detector"]}, {"Embedding", r.Models["embedding"]}, {"Vision embedding", r.Models["vision_embedding"]}, {"Decision", r.Models["decision"]}} {
 		if kv[1] != "" {
 			ms = append(ms, fmt.Sprintf("%s `%s`", kv[0], kv[1]))
 		}
@@ -203,7 +206,7 @@ func (r *Report) Markdown() string {
 			w("| %s | %d | %s | %s | %s | %s |\n", t.Type, t.N, pct(t.Precision), pct(t.Recall), pct(t.SetP), pct(t.SetR))
 		}
 		w("| **全部** | %d | **%s** | **%s** | %s | %s |\n", len(q.Queries), pct(q.Precision), pct(q.Recall), pct(q.SetP), pct(q.SetR))
-		w("\nP@5 %.3f · P@10 %.3f · R@5 %.3f · R@10 %.3f · 延迟中位 %.0f ms / P90 %.0f ms\n", q.P5, q.P10, q.R5, q.R10, q.Latency.Median, q.Latency.P90)
+		w("\nP@5 %.3f，P@10 %.3f，R@5 %.3f，R@10 %.3f；延迟中位 %.0f ms，P90 %.0f ms。\n", q.P5, q.P10, q.R5, q.R10, q.Latency.Median, q.Latency.P90)
 		var weak []QueryResult
 		for _, x := range q.Queries {
 			if x.Precision < 1 || x.Recall < 1 {

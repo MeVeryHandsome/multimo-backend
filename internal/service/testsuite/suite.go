@@ -88,6 +88,9 @@ func (s *Suite) Run(ctx context.Context, only []string, progress func(string)) *
 	r := &Report{GeneratedAt: start.UTC(), Version: s.Version, Errors: map[string]string{},
 		Models:      map[string]string{"vlm": vlm, "embedding": emb, "vision_embedding": s.AI.VisionModel(), "decision": dec},
 		Definitions: definitions}
+	if d := s.AI.DetectorModel(); s.AI.DetectorEnabled() && d != "" {
+		r.Models["detector"] = d
+	}
 	want := map[string]bool{}
 	for _, x := range only {
 		want[x] = true
@@ -124,8 +127,8 @@ func (s *Suite) Run(ctx context.Context, only []string, progress func(string)) *
 }
 
 var definitions = map[string]string{
-	"keyframe_consistency": "关键帧自动标注与人工标注的一致性：在 6 段带逐帧标注的视频（VisDrone-VID 4 段、UAVDT 2 段）的每个关键帧上，把 VLM 检测框换算回原始帧坐标，与该帧的可见标注按 IoU≥0.5、同大类贪心匹配，取 F1 = 2TP/(2TP+FP+FN)（所有关键帧合计）。UAVDT 只标注车辆，其他类别的检测不计。语义一致性另以类别集合的 Jaccard 和文本向量余弦给出。",
-	"detection":            "VisDrone-DET 验证集 100 张图（每 5 张取 1 张）。预测与可见标注（面积≥600 像素且非重度遮挡）按 IoU≥0.5、类别一致贪心匹配。与不可见标注或忽略区域匹配的预测不计入正确也不计入误报（VisDrone/COCO 惯例）。准确率 = TP/(TP+FP)，漏检率 = FN/(TP+FN)。",
+	"keyframe_consistency": "关键帧自动标注与人工标注的一致性：在 6 段带逐帧标注的视频（VisDrone-VID 4 段、UAVDT 2 段）的每个关键帧上，把系统给出的目标框（配置了检测模型时来自检测模型，否则来自 VLM）换算回原始帧坐标，与该帧的可见标注按 IoU≥0.5、同大类贪心匹配，取 F1 = 2TP/(2TP+FP+FN)（所有关键帧合计）。UAVDT 只标注车辆，其他类别的检测不计。语义一致性另以类别集合的 Jaccard 和文本向量余弦给出。",
+	"detection":            "VisDrone-DET 验证集 100 张图（每 5 张取 1 张），检测阈值在其余 448 张验证集图片上标定。预测与可见标注（面积≥600 像素且非重度遮挡）按 IoU≥0.5、类别一致贪心匹配。与不可见标注或忽略区域匹配的预测不计入正确也不计入误报（VisDrone/COCO 惯例）。准确率 = TP/(TP+FP)，漏检率 = FN/(TP+FN)。",
 	"geo":                  "UAV-VisLoc 01 区 82 张照片（无 EXIF GPS，只提供拍摄时间和参考底图），系统通过底图视觉匹配和航迹平滑推算的坐标与 CSV 真值的 haversine 距离。达标条件：中位误差 < 100 m。DJI 视频的定位来自配套飞行记录，真值即飞行记录本身，只作为流程验证。",
 	"retrieval_precision":  "每条 query 取按素材聚合后的前 10 个结果，准确率 = 前 10 中相关结果数 ÷ min(10, 相关结果总数)；即相关结果只有 1~2 个时，只要它们出现在前 10 名，准确率就是 100%。50 条取平均。",
 	"retrieval_recall":     "每条 query 查全率 = 前 max(10, 相关结果总数) 名中的相关结果数 ÷ 相关结果总数；相关结果多于 10 个时，允许系统返回与相关数一样多的结果。50 条取平均。",

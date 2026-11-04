@@ -11,7 +11,10 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 
 	v1 "multimo-backend/api/keyframe/v1"
+	"multimo-backend/internal/config"
+	"multimo-backend/internal/model/entity"
 	"multimo-backend/internal/service/asset"
+	"multimo-backend/internal/service/geo"
 	"multimo-backend/internal/service/pipeline"
 )
 
@@ -107,4 +110,37 @@ func (c *ControllerV1) Rerun(ctx context.Context, req *v1.RerunReq) (*v1.RerunRe
 		}
 	}
 	return &v1.RerunRes{Queued: len(ids)}, nil
+}
+
+// GeoOverview lists located keyframes and georeferenced basemaps for the map.
+func (c *ControllerV1) GeoOverview(ctx context.Context, req *v1.GeoOverviewReq) (*v1.GeoOverviewRes, error) {
+	res := &v1.GeoOverviewRes{Points: []*v1.GeoPoint{}, Basemaps: []*v1.Basemap{}, TileUrl: config.Get().MapTileURL}
+	m := c.DB.Model("keyframes k").Ctx(ctx).InnerJoin("assets a", "a.id = k.asset_id").
+		Fields("k.id AS keyframe_id, k.asset_id, a.type AS asset_type, a.collection, a.filename, k.ts_sec, k.lat, k.lon, "+
+			"k.geo_source, k.geo_accuracy_m").WhereNotNull("k.lat").Where("a.status", "ready")
+	if req.Collection != "" {
+		m = m.Where("a.collection", req.Collection)
+	}
+	if err := m.OrderAsc("a.id").OrderAsc("k.idx").Scan(&res.Points); err != nil {
+		return nil, err
+	}
+	for _, p := range res.Points {
+		p.ImageUrl = fmt.Sprintf("/api/v1/keyframes/%d/image", p.KeyframeId)
+	}
+	var rasters []*entity.Asset
+	q := c.DB.Model("assets").Ctx(ctx).Where("type", "remote_sensing").Where("status", "ready")
+	if req.Collection != "" {
+		q = q.Where("collection", req.Collection)
+	}
+	if err := q.Scan(&rasters); err != nil {
+		return nil, err
+	}
+	for _, a := range rasters {
+		if b, ok := geo.Bounds(a); ok && geo.IsBasemap(a) {
+			res.Basemaps = append(res.Basemaps, &v1.Basemap{AssetId: a.Id, Filename: a.Filename, Collection: a.Collection,
+				West: b.West, South: b.South, East: b.East, North: b.North,
+				ThumbnailUrl: fmt.Sprintf("/api/v1/assets/%d/thumbnail", a.Id)})
+		}
+	}
+	return res, nil
 }

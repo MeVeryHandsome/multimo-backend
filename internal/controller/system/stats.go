@@ -41,9 +41,10 @@ func (c *ControllerV1) Stats(ctx context.Context, _ *v1.StatsReq) (*v1.StatsRes,
 	db := g.DB()
 	res := &v1.StatsRes{}
 	for dst, sql := range map[*[]v1.CountRow]string{
-		&res.AssetsByType:   "SELECT type AS key, count(*) AS count FROM assets GROUP BY type ORDER BY type",
-		&res.AssetsByStatus: "SELECT status AS key, count(*) AS count FROM assets GROUP BY status ORDER BY status",
-		&res.TasksByStatus:  "SELECT status AS key, count(*) AS count FROM tasks GROUP BY status ORDER BY status",
+		&res.AssetsByType:       "SELECT type AS key, count(*) AS count FROM assets GROUP BY type ORDER BY type",
+		&res.AssetsByStatus:     "SELECT status AS key, count(*) AS count FROM assets GROUP BY status ORDER BY status",
+		&res.TasksByStatus:      "SELECT status AS key, count(*) AS count FROM tasks GROUP BY status ORDER BY status",
+		&res.AssetsByCollection: "SELECT collection AS key, count(*) AS count FROM assets GROUP BY collection ORDER BY collection",
 	} {
 		if err := db.GetScan(ctx, dst, sql); err != nil {
 			return nil, err

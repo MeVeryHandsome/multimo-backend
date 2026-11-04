@@ -1,6 +1,7 @@
 // Package analyze describes each keyframe with the VLM: a Chinese caption,
 // scene tags and attributes, object boxes, landmarks, visible text and a
-// place guess. It then embeds the searchable text.
+// place guess. Object boxes come from the VisDrone detector when one is
+// configured. It then embeds the searchable text.
 package analyze
 
 import (
@@ -10,6 +11,7 @@ import (
 	"image/jpeg"
 	"math"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -145,17 +147,39 @@ func (s *Service) next(ctx context.Context, a *entity.Asset) error {
 
 // analyzeOne describes a keyframe and stores the result. It returns the
 // searchable text and whether the local fallback was used.
+//
+// Drone photos and video frames go to the object detector first when one is
+// configured: its boxes are stored and its counts are given to the VLM, which
+// then only writes the description and attributes. Without a detector, or
+// when it fails, the VLM draws the boxes itself.
 func (s *Service) analyzeOne(ctx context.Context, a *entity.Asset, kf *kfRow) (string, bool, error) {
 	path := s.Assets.Abs(kf.Path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", false, err
 	}
+	var detected *llm.DetectResult
+	if s.AI.DetectsType(a.Type) {
+		detected, err = s.detect(ctx, a, kf, data)
+		if ctx.Err() != nil {
+			return "", false, ctx.Err()
+		}
+		if err != nil {
+			g.Log().Warningf(ctx, "keyframe %d: detector failed, the VLM draws the boxes: %v", kf.Id, err)
+		}
+	}
+	prompt := buildPrompt(a.Type)
+	var detCounts map[string]int
+	if detected != nil {
+		detCounts = countLabels(detected.Objects)
+		prompt = buildPromptWithDetections(a.Type, detCounts)
+	}
+
 	temp := 0.1
 	var res Result
 	resp, err := s.AI.ChatJSON(ctx, llm.ChatRequest{
 		Purpose: "keyframe-analysis", AssetID: a.Id, MaxTokens: 8192, Temperature: &temp,
-		Messages: []llm.Message{{Text: buildPrompt(a.Type),
+		Messages: []llm.Message{{Text: prompt,
 			Images: []llm.Image{{Data: data, MIME: "image/jpeg", Width: kf.Width, Height: kf.Height}}}},
 		Fallback: func() (string, error) { return fallbackJSON(a, kf, path), nil },
 	}, &res)
@@ -170,16 +194,31 @@ func (s *Service) analyzeOne(ctx context.Context, a *entity.Asset, kf *kfRow) (s
 		fellBack = true
 	}
 
-	dets := boxes(res.Objects, kf.Width, kf.Height)
+	var dets []Box
+	boxSource := "vlm"
+	if fellBack {
+		boxSource = "fallback"
+	}
+	if detected != nil {
+		dets = detectorBoxes(detected, kf.Width, kf.Height)
+		boxSource = "detector"
+		res.Counts = mergeCounts(res.Counts, detCounts)
+	} else {
+		dets = boxes(res.Objects, kf.Width, kf.Height)
+	}
 	tags := tagsOf(&res)
 	text := searchText(&res, tags)
 	meta := g.Map{}
 	for k, v := range kf.Meta {
 		meta[k] = v
 	}
-	meta["analysis"] = g.Map{"scene": res.Scene, "time_of_day": res.TimeOfDay, "weather": res.Weather,
+	analysis := g.Map{"scene": res.Scene, "time_of_day": res.TimeOfDay, "weather": res.Weather,
 		"view": res.View, "altitude": res.Altitude, "counts": res.Counts, "landmarks": res.Landmarks,
-		"texts": res.Texts, "place_guess": res.PlaceGuess, "boxes": len(dets)}
+		"texts": res.Texts, "place_guess": res.PlaceGuess, "boxes": len(dets), "box_source": boxSource}
+	if detected != nil {
+		analysis["detector"] = detected.Model
+	}
+	meta["analysis"] = analysis
 	meta["needsRerun"] = fellBack
 	metaJSON, _ := json.Marshal(meta)
 	source := "vlm"
@@ -200,8 +239,12 @@ func (s *Service) analyzeOne(ctx context.Context, a *entity.Asset, kf *kfRow) (s
 		}
 		rows := make(g.List, len(dets))
 		for i, d := range dets {
-			rows[i] = g.Map{"asset_id": a.Id, "keyframe_id": kf.Id, "label": d.Label, "label_zh": Labels[d.Label],
-				"x": d.X, "y": d.Y, "w": d.W, "h": d.H, "source": source}
+			row := g.Map{"asset_id": a.Id, "keyframe_id": kf.Id, "label": d.Label, "label_zh": Labels[d.Label],
+				"x": d.X, "y": d.Y, "w": d.W, "h": d.H, "source": boxSource}
+			if d.Score > 0 {
+				row["score"] = d.Score
+			}
+			rows[i] = row
 		}
 		_, err := tx.Model("detections").Data(rows).Batch(200).Insert()
 		return err
@@ -209,10 +252,74 @@ func (s *Service) analyzeOne(ctx context.Context, a *entity.Asset, kf *kfRow) (s
 	return text, fellBack, err
 }
 
+// detect sends the keyframe to the detector. Photos are sent from the
+// original file (full resolution); video frames as extracted.
+func (s *Service) detect(ctx context.Context, a *entity.Asset, kf *kfRow, frame []byte) (*llm.DetectResult, error) {
+	img := llm.Image{Data: frame, MIME: "image/jpeg", Width: kf.Width, Height: kf.Height}
+	if a.Type == "image" && (a.Format == "jpeg" || a.Format == "png") && a.StoragePath != "" {
+		if data, err := os.ReadFile(a.StoragePath); err == nil {
+			img = llm.Image{Data: data, MIME: "image/" + a.Format, Width: intOr(a.Width), Height: intOr(a.Height)}
+		}
+	}
+	return s.AI.Detect(ctx, "keyframe-detection", a.Id, img)
+}
+
+func intOr(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// detectorBoxes scales detector boxes (pixels of the image sent) to the
+// keyframe, dropping labels outside the vocabulary.
+func detectorBoxes(r *llm.DetectResult, w, h int) []Box {
+	sx, sy := float64(w)/float64(r.Width), float64(h)/float64(r.Height)
+	var out []Box
+	for _, o := range r.Objects {
+		if _, ok := Labels[o.Label]; !ok {
+			continue
+		}
+		x1, y1 := clamp(o.Box[0]*sx, 0, float64(w)), clamp(o.Box[1]*sy, 0, float64(h))
+		x2, y2 := clamp(o.Box[2]*sx, 0, float64(w)), clamp(o.Box[3]*sy, 0, float64(h))
+		if x2-x1 < 1 || y2-y1 < 1 {
+			continue
+		}
+		out = append(out, Box{Label: o.Label, X: x1, Y: y1, W: x2 - x1, H: y2 - y1, Score: o.Score})
+	}
+	return out
+}
+
+func countLabels(objs []llm.Detection) map[string]int {
+	out := map[string]int{}
+	for _, o := range objs {
+		out[o.Label]++
+	}
+	return out
+}
+
+// mergeCounts takes the detector's counts for its classes and the VLM's for
+// everything else.
+func mergeCounts(vlm, det map[string]int) map[string]int {
+	out := map[string]int{}
+	for l, n := range vlm {
+		if !slices.Contains(DetectorLabels, l) && n > 0 {
+			out[l] = n
+		}
+	}
+	for l, n := range det {
+		if n > 0 {
+			out[l] = n
+		}
+	}
+	return out
+}
+
 // Box is a detection in keyframe pixel coordinates.
 type Box struct {
 	Label      string
 	X, Y, W, H float64
+	Score      float64 // detector confidence; 0 for VLM boxes
 }
 
 // boxes converts 0-1000 relative boxes to pixels, dropping unknown labels

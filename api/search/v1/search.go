@@ -11,6 +11,7 @@ type SearchReq struct {
 	Query       string          `json:"query"       v:"required#请输入检索内容" dc:"自然语言检索语句"`
 	Collections []string        `json:"collections" dc:"限定集合"`
 	Types       []string        `json:"types"       dc:"限定类型：video | image | remote_sensing | document"`
+	AssetIds    []int64         `json:"assetIds"    dc:"限定素材（如在某个文档内检索）"`
 	TopK        int             `json:"topK"        d:"10" v:"max:100"`
 	GroupBy     string          `json:"groupBy"     d:"asset" v:"in:asset,unit" dc:"asset：每个素材只返回最相关的一条；unit：返回关键帧/文档片段"`
 	NoRerank    bool            `json:"noRerank"    dc:"跳过 Decision 精排"`

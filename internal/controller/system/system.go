@@ -26,9 +26,13 @@ func (c *ControllerV1) Health(ctx context.Context, _ *v1.HealthReq) (*v1.HealthR
 			Embedding:    cfg.Embedding.Model,
 			EmbeddingDim: cfg.Embedding.Dim,
 			Decision:     cfg.Decision.Model,
+			Vision:       cfg.Vision.Model,
 		},
 		Missing: cfg.Missing(),
 		Time:    time.Now().Format(time.RFC3339),
+	}
+	if cfg.Detector.Enabled() {
+		res.Models.Detector = cfg.Detector.Model
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

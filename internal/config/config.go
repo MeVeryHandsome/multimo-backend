@@ -64,6 +64,22 @@ type Decision struct {
 	Path string
 }
 
+// Detector is the object-detection service (detector/ in the main
+// repository): a YOLO model trained on VisDrone behind POST {base}/v1/detect.
+// It is optional; without it the VLM draws the boxes.
+type Detector struct {
+	Endpoint
+	// Conf is the score threshold sent with each request (0 keeps the
+	// service default).
+	Conf float64
+	// Types are the asset types whose keyframes go to the detector (its
+	// classes are drone-view objects, not remote-sensing ones).
+	Types []string
+}
+
+// Enabled reports whether a detector URL is set (the key is optional).
+func (d Detector) Enabled() bool { return d.BaseURL != "" }
+
 type AIPolicy struct {
 	MaxRetries      int
 	RetryBase       time.Duration
@@ -103,16 +119,20 @@ type Video struct {
 }
 
 type Config struct {
-	HTTPAddr  string
-	Database  Database
-	Storage   Storage
-	VLM       VLM
-	Embedding Embedding
-	Decision  Decision
-	Vision    VisionEmbedding
-	Geo       Geo
-	AI        AIPolicy
-	Video     Video
+	HTTPAddr string
+	// MapTileURL is the background tile template for the frontend map
+	// ("none" disables online tiles; basemap overlays still show).
+	MapTileURL string
+	Database   Database
+	Storage    Storage
+	VLM        VLM
+	Embedding  Embedding
+	Decision   Decision
+	Vision     VisionEmbedding
+	Detector   Detector
+	Geo        Geo
+	AI         AIPolicy
+	Video      Video
 }
 
 var (
@@ -136,7 +156,8 @@ func Load() *Config {
 		MaxConcurrency: envInt("VLM_MAX_CONCURRENCY", 4),
 	}
 	return &Config{
-		HTTPAddr: env("HTTP_ADDR", ":8000"),
+		HTTPAddr:   env("HTTP_ADDR", ":8000"),
+		MapTileURL: mapTiles(env("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")),
 		Database: Database{
 			Host:     env("POSTGRES_HOST", "127.0.0.1"),
 			Port:     envInt("POSTGRES_PORT", 5432),
@@ -182,6 +203,17 @@ func Load() *Config {
 			},
 			Path: env("VISION_EMBEDDING_PATH", "/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"),
 			Dim:  envInt("VISION_EMBEDDING_DIM", 1152),
+		},
+		Detector: Detector{
+			Endpoint: Endpoint{
+				BaseURL:        strings.TrimRight(env("DETECTOR_BASE_URL", ""), "/"),
+				APIKey:         env("DETECTOR_API_KEY", ""),
+				Model:          env("DETECTOR_MODEL", "visdrone-yolo11x"),
+				Timeout:        time.Duration(envInt("DETECTOR_TIMEOUT_SEC", 60)) * time.Second,
+				MaxConcurrency: envInt("DETECTOR_MAX_CONCURRENCY", 2),
+			},
+			Conf:  envFloat("DETECTOR_CONF", 0),
+			Types: envList("DETECTOR_TYPES", []string{"video", "image"}),
 		},
 		Geo: Geo{
 			MaxSpeedMPS: envFloat("GEO_MAX_SPEED_MPS", 25),
@@ -243,6 +275,27 @@ func envFloat(key string, def float64) float64 {
 		return v
 	}
 	return def
+}
+
+func mapTiles(v string) string {
+	if strings.EqualFold(v, "none") {
+		return ""
+	}
+	return v
+}
+
+func envList(key string, def []string) []string {
+	raw := env(key, "")
+	if raw == "" {
+		return def
+	}
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func envInts(key string, def []int) []int {

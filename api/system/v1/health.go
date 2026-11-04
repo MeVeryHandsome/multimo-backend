@@ -11,6 +11,8 @@ type ModelInfo struct {
 	Embedding    string `json:"embedding"    dc:"向量模型"`
 	EmbeddingDim int    `json:"embeddingDim" dc:"向量维度"`
 	Decision     string `json:"decision"     dc:"决策模型"`
+	Vision       string `json:"vision"       dc:"图像向量模型"`
+	Detector     string `json:"detector"     dc:"目标检测模型（未配置时为空，由 VLM 画框）"`
 }
 
 type HealthRes struct {
