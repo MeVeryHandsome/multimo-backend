@@ -21,6 +21,7 @@ import (
 	"multimo-backend/internal/model/entity"
 	"multimo-backend/internal/pkg/llm"
 	"multimo-backend/internal/service/asset"
+	"multimo-backend/internal/service/geo"
 	"multimo-backend/internal/service/keyframe"
 	"multimo-backend/internal/service/pipeline"
 )
@@ -324,7 +325,7 @@ func fallbackJSON(a *entity.Asset, kf *kfRow, path string) string {
 		parts = append(parts, "拍摄于"+kf.CapturedAt.Layout("2006-01-02 15:04"))
 	}
 	if a.Lat != nil {
-		parts = append(parts, fmt.Sprintf("位置约北纬%.4f°、东经%.4f°", *a.Lat, *a.Lon))
+		parts = append(parts, "位置约"+geo.FormatLatLonZH(*a.Lat, *a.Lon, 4))
 	}
 	if a.Type == "video" {
 		parts = append(parts, fmt.Sprintf("位于视频第%.1f秒", kf.TsSec))

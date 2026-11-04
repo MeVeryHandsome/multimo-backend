@@ -25,10 +25,14 @@ import (
 // photos and the satellite image).
 
 const (
-	querySide      = 512 // query and tile images are resampled to this square
-	queryRotations = 12  // every 30 degrees
-	candidatesPer  = 30  // candidates kept per image after merging scales
-	dedupMetres    = 60  // candidates closer than this are the same place
+	// Query and tile images are resampled to this square. 448 px matches
+	// the photo to the satellite crops better than 512 px with this
+	// embedding model: refining the same 82 tracked positions reached
+	// 48.8% within 100 m at 448 px and stayed at 40.2% at 512 px.
+	querySide      = 448
+	queryRotations = 12 // every 30 degrees
+	candidatesPer  = 30 // candidates kept per image after merging scales
+	dedupMetres    = 60 // candidates closer than this are the same place
 )
 
 // Candidate is a possible position for one image.
@@ -40,7 +44,7 @@ type Candidate struct {
 }
 
 // QueryImages turns a photo into rotated square queries: centre square,
-// resampled to 512 px, rotated in 30 degree steps with mirrored borders so no
+// resampled to querySide, rotated in 30 degree steps with mirrored borders so no
 // black corners appear.
 func QueryImages(src image.Image) []image.Image {
 	b := src.Bounds()
@@ -100,7 +104,7 @@ func rotateReflect(src *image.RGBA, deg float64) *image.RGBA {
 }
 
 // TileImage crops a square of side metres centred on (lat, lon) from a
-// geographic raster and resamples it to 512x512. It returns nil when the
+// geographic raster and resamples it to querySide x querySide. It returns nil when the
 // square leaves the raster.
 func TileImage(t *geotiff.File, lat, lon float64, sideM float64) (image.Image, error) {
 	x, y, ok := t.LonLatToPixel(lon, lat)

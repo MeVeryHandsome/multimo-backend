@@ -102,3 +102,17 @@ func TestIsBasemapWithJSONNumbers(t *testing.T) {
 		t.Fatal("non-raster recognised as basemap")
 	}
 }
+
+func TestRefineOffsets(t *testing.T) {
+	pts := RefineOffsets(29.73, 115.98, 150, 50)
+	if len(pts) != 49 || pts[0] != [2]float64{29.73, 115.98} {
+		t.Fatalf("got %d points, first %v", len(pts), pts[0])
+	}
+	far := 0.0
+	for _, p := range pts {
+		far = math.Max(far, Haversine(29.73, 115.98, p[0], p[1]))
+	}
+	if math.Abs(far-150*math.Sqrt2) > 2 {
+		t.Fatalf("corner distance %v", far)
+	}
+}

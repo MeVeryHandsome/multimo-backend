@@ -1,6 +1,9 @@
 package geo
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 const earthRadius = 6371008.8
 
@@ -18,4 +21,17 @@ func Haversine(lat1, lon1, lat2, lon2 float64) float64 { return haversine(lat1, 
 // metresPerDegree returns the length of one degree of latitude and longitude.
 func metresPerDegree(lat float64) (mLat, mLon float64) {
 	return 110574, 111320 * math.Cos(lat*math.Pi/180)
+}
+
+// FormatLatLonZH writes a position the way Chinese answers and search text
+// expect, with hemisphere words instead of signs: "北纬33.73322°、西经118.33468°".
+func FormatLatLonZH(lat, lon float64, prec int) string {
+	ns, ew := "北纬", "东经"
+	if lat < 0 {
+		ns, lat = "南纬", -lat
+	}
+	if lon < 0 {
+		ew, lon = "西经", -lon
+	}
+	return fmt.Sprintf("%s%.*f°、%s%.*f°", ns, prec, lat, ew, prec, lon)
 }

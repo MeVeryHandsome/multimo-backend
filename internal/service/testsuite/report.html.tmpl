@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multimo 评测报告</title>
+<style>
+:root {
+  --bg: #f7f6f2; --paper: #fffefb; --ink: #1c1b19; --muted: #6d6a63; --rule: #d9d5cb; --hair: #ebe8e0;
+  --pass: #2d6a3e; --pass-bg: #e6f0e5; --fail: #a23a22; --fail-bg: #f7e4dd; --accent: #24527a;
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412; --paper: #1b1a18; --ink: #e9e6df; --muted: #9b978e; --rule: #3a3833; --hair: #2a2926;
+    --pass: #8cc79a; --pass-bg: #1f3324; --fail: #ee8f75; --fail-bg: #3b221b; --accent: #8fb8de;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412; --paper: #1b1a18; --ink: #e9e6df; --muted: #9b978e; --rule: #3a3833; --hair: #2a2926;
+  --pass: #8cc79a; --pass-bg: #1f3324; --fail: #ee8f75; --fail-bg: #3b221b; --accent: #8fb8de;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 var(--sans); }
+main { max-width: 1080px; margin: 0 auto; padding: 40px 16px 80px; }
+header { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 28px; }
+.eyebrow { font: 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: 30px; line-height: 1.2; margin: 10px 0 12px; font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: 19px; margin: 44px 0 6px; padding-top: 14px; border-top: 1px solid var(--rule); display: flex; gap: 12px; align-items: baseline; }
+h2 .no { font: 13px var(--mono); color: var(--muted); }
+h3 { font-size: 15px; margin: 22px 0 8px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+.tally { margin-top: 18px; font-size: 15px; }
+.tally strong { font: 600 22px var(--mono); margin-right: 4px; }
+.def { color: var(--muted); font-size: 13.5px; max-width: 78ch; margin: 4px 0 14px; }
+.scroll { overflow-x: auto; margin: 0 0 8px; }
+table { border-collapse: collapse; width: 100%; background: var(--paper); font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+th { font-weight: 600; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
+tr.aux td { color: var(--muted); }
+.summary td:first-child { font-weight: 600; }
+.summary tr.aux td:first-child { font-weight: 400; }
+.v { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.v.ok { color: var(--pass); background: var(--pass-bg); }
+.v.no { color: var(--fail); background: var(--fail-bg); }
+.v.ref { color: var(--muted); border: 1px solid var(--rule); font-weight: 400; }
+.note { color: var(--muted); font-size: 12.5px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.err { border-left: 3px solid var(--fail); background: var(--fail-bg); padding: 8px 12px; margin: 12px 0; font-size: 13.5px; }
+details { margin: 12px 0; }
+summary { cursor: pointer; color: var(--accent); font-size: 13.5px; }
+.ans { max-width: 46ch; }
+.hit { color: var(--pass); font-weight: 600; }
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 10px 0 16px; }
+.figures div { background: var(--paper); padding: 10px 12px; }
+.figures span { display: block; font-size: 12px; color: var(--muted); }
+.figures b { font: 600 18px var(--mono); }
+footer { margin-top: 56px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--rule); padding-top: 12px; }
+@media print { body { background: #fff; } details { display: block; } details > summary { display: none; } }
+@media (max-width: 640px) { h1 { font-size: 24px; } main { padding-top: 24px; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Multimo · Benchmark report</div>
+  <h1>多模态无人机视频分析系统评测报告</h1>
+  <div class="meta">
+    <span>生成 <b>{{time .}}</b></span>
+    <span>版本 <b>{{.Version}}</b></span>
+    <span>耗时 <b>{{f 0 .DurationSec}} s</b></span>
+    {{range models .Models}}<span>{{index . 0}} <b class="mono">{{index . 1}}</b></span>{{end}}
+  </div>
+  {{$t := primary .Metrics}}
+  <div class="tally"><strong>{{index $t 0}}/{{index $t 1}}</strong> 项核心指标达标</div>
+</header>
+
+{{range $k, $v := .Errors}}<div class="err"><b>{{$k}}</b> 未完成：{{$v}}</div>{{end}}
+
+<section>
+<h2><span class="no">00</span>指标总览</h2>
+<p class="def">核心指标对应赛题要求，参考指标用于解释结果。各项真值均来自数据集标注、GPS 记录或文档原文，不使用系统自身的输出。</p>
+<div class="scroll"><table class="summary">
+<thead><tr><th>指标</th><th class="n">结果</th><th>目标</th><th>结论</th><th>说明</th></tr></thead>
+<tbody>
+{{range .Metrics}}<tr{{if not .Primary}} class="aux"{{end}}>
+  <td>{{.Name}}</td><td class="n">{{.Display}}</td><td>{{.Target}}</td>
+  <td>{{if .Primary}}<span class="v {{if .Pass}}ok{{else}}no{{end}}">{{verdict .Pass}}</span>{{else}}<span class="v ref">参考</span>{{end}}</td>
+  <td class="note">{{.Note}}</td>
+</tr>{{end}}
+</tbody></table></div>
+</section>
+
+{{with .Formats}}
+<section>
+<h2><span class="no">01</span>数据类型覆盖</h2>
+<p class="def">{{def $ "formats"}}</p>
+<div class="scroll"><table>
+<thead><tr><th>类型</th><th>格式</th><th class="n">解析成功</th><th class="n">失败</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td>{{.Type}}</td><td class="mono">{{.Format}}</td><td class="n">{{.Ready}}</td><td class="n">{{.Failed}}</td></tr>{{end}}
+<tr class="total"><td>{{.Types}} 种类型</td><td>{{.Formats}} 种格式</td><td></td><td></td></tr></tbody>
+</table></div>
+{{if .Failed}}<p class="note">解析失败：{{range .Failed}}<span class="mono">{{.}}</span> {{end}}</p>{{end}}
+</section>
+{{end}}
+
+{{with .Keyframe}}
+<section>
+<h2><span class="no">02</span>关键帧自动标注一致性</h2>
+<p class="def">{{def $ "keyframe_consistency"}}</p>
+<div class="scroll"><table>
+<thead><tr><th>视频</th><th class="n">关键帧</th><th class="n">已评测</th><th class="n">TP</th><th class="n">FP</th><th class="n">FN</th><th class="n">准确率</th><th class="n">召回率</th><th class="n">F1</th><th class="n">类别 Jaccard</th><th class="n">语义余弦</th></tr></thead>
+<tbody>{{range .Videos}}<tr><td class="mono">{{.ID}}</td><td class="n">{{.Keyframes}}</td><td class="n">{{.Evaluated}}</td><td class="n">{{.Match.TP}}</td><td class="n">{{.Match.FP}}</td><td class="n">{{.Match.FN}}</td><td class="n">{{pct .Precision}}</td><td class="n">{{pct .Recall}}</td><td class="n">{{pct .F1}}</td><td class="n">{{f 3 .Jaccard}}</td><td class="n">{{f 3 .Cosine}}</td></tr>{{end}}
+<tr class="total"><td>合计</td><td class="n">{{.Keyframes}}</td><td></td><td class="n">{{.Match.TP}}</td><td class="n">{{.Match.FP}}</td><td class="n">{{.Match.FN}}</td><td class="n">{{pct .Match.Precision}}</td><td class="n">{{pct .Match.Recall}}</td><td class="n">{{pct .F1}}</td><td class="n">{{f 3 .Jaccard}}</td><td class="n">{{f 3 .Cosine}}</td></tr></tbody>
+</table></div>
+{{if .Skipped}}<p class="note">跳过：{{range .Skipped}}{{.}}；{{end}}</p>{{end}}
+</section>
+{{end}}
+
+{{with .Detection}}
+<section>
+<h2><span class="no">03</span>目标识别</h2>
+<p class="def">{{def $ "detection"}}</p>
+<div class="figures">
+  <div><span>图片</span><b>{{.Images}}</b></div>
+  <div><span>准确率（类别一致）</span><b>{{pct .Precision}}</b></div>
+  <div><span>漏检率（类别一致）</span><b>{{pct .MissRate}}</b></div>
+  <div><span>准确率（同大类）</span><b>{{pct .GroupPrec}}</b></div>
+  <div><span>漏检率（同大类）</span><b>{{pct .GroupMissRate}}</b></div>
+  <div><span>准确率（不排除不可见目标）</span><b>{{pct .RawPrecision}}</b></div>
+</div>
+<div class="scroll"><table>
+<thead><tr><th>口径</th><th class="n">TP</th><th class="n">FP</th><th class="n">FN</th><th class="n">忽略</th><th class="n">准确率</th><th class="n">召回率</th><th class="n">漏检率</th></tr></thead>
+<tbody>
+<tr><td>类别一致</td><td class="n">{{.Exact.TP}}</td><td class="n">{{.Exact.FP}}</td><td class="n">{{.Exact.FN}}</td><td class="n">{{.Exact.Ignored}}</td><td class="n">{{pct .Exact.Precision}}</td><td class="n">{{pct .Exact.Recall}}</td><td class="n">{{pct .Exact.MissRate}}</td></tr>
+<tr><td>同大类</td><td class="n">{{.Grouped.TP}}</td><td class="n">{{.Grouped.FP}}</td><td class="n">{{.Grouped.FN}}</td><td class="n">{{.Grouped.Ignored}}</td><td class="n">{{pct .Grouped.Precision}}</td><td class="n">{{pct .Grouped.Recall}}</td><td class="n">{{pct .Grouped.MissRate}}</td></tr>
+</tbody></table></div>
+<h3>按类别</h3>
+<div class="scroll"><table>
+<thead><tr><th>类别</th><th class="n">可见标注</th><th class="n">预测</th><th class="n">准确率</th><th class="n">召回率</th></tr></thead>
+<tbody>{{range .PerClass}}<tr><td>{{.Label}}</td><td class="n">{{.GT}}</td><td class="n">{{.Pred}}</td><td class="n">{{pct .Precision}}</td><td class="n">{{pct .Recall}}</td></tr>{{end}}</tbody>
+</table></div>
+</section>
+{{end}}
+
+{{with .Geo}}
+<section>
+<h2><span class="no">04</span>空间对齐</h2>
+<p class="def">{{def $ "geo"}}</p>
+<div class="figures">
+  <div><span>已定位</span><b>{{.Located}}/{{.Total}}</b></div>
+  <div><span>中位误差</span><b>{{f 0 .Visual.Median}} m</b></div>
+  <div><span>平均误差</span><b>{{f 0 .Visual.Mean}} m</b></div>
+  <div><span>P90</span><b>{{f 0 .Visual.P90}} m</b></div>
+  <div><span>&lt; 100 m</span><b>{{pct .Within100}}</b></div>
+  <div><span>&lt; 250 m</span><b>{{pct .Within250}}</b></div>
+</div>
+{{with .DJI}}<p>DJI 视频：{{.Keyframes}} 个关键帧，{{.FromTelemetry}} 个由飞行记录定位（{{.Alignment}}），与独立插值的最大偏差 <span class="mono">{{f 2 .MaxDeviationM}} m</span>。</p>{{end}}
+<details><summary>逐张误差（{{len .Items}} 张）</summary>
+<div class="scroll"><table>
+<thead><tr><th>照片</th><th>定位来源</th><th class="n">误差</th></tr></thead>
+<tbody>{{range .Items}}<tr><td class="mono">{{.Image}}</td><td>{{.Source}}</td><td class="n">{{meters .ErrorM}}</td></tr>{{end}}</tbody>
+</table></div></details>
+</section>
+{{end}}
+
+{{with .Retrieval}}
+<section>
+<h2><span class="no">05</span>检索</h2>
+<p class="def">{{def $ "retrieval_precision"}}</p>
+<p class="def">{{def $ "retrieval_recall"}}</p>
+<div class="figures">
+  <div><span>准确率</span><b>{{pct .Precision}}</b></div>
+  <div><span>查全率</span><b>{{pct .Recall}}</b></div>
+  <div><span>P@5 / P@10</span><b>{{f 2 .P5}} / {{f 2 .P10}}</b></div>
+  <div><span>R@5 / R@10</span><b>{{f 2 .R5}} / {{f 2 .R10}}</b></div>
+  <div><span>延迟中位 / P90</span><b>{{f 1 .Latency.Median}}/{{f 1 .Latency.P90}}<small> ms</small></b></div>
+</div>
+<div class="scroll"><table>
+<thead><tr><th>类型</th><th class="n">数量</th><th class="n">准确率</th><th class="n">查全率</th><th class="n">判为相关·精确率</th><th class="n">判为相关·查全率</th></tr></thead>
+<tbody>{{range .ByType}}<tr><td>{{.Type}}</td><td class="n">{{.N}}</td><td class="n">{{pct .Precision}}</td><td class="n">{{pct .Recall}}</td><td class="n">{{pct .SetP}}</td><td class="n">{{pct .SetR}}</td></tr>{{end}}
+<tr class="total"><td>全部</td><td class="n">{{len .Queries}}</td><td class="n">{{pct .Precision}}</td><td class="n">{{pct .Recall}}</td><td class="n">{{pct .SetP}}</td><td class="n">{{pct .SetR}}</td></tr></tbody>
+</table></div>
+<details><summary>逐条结果（{{len .Queries}} 条，绿色为相关结果）</summary>
+<div class="scroll"><table>
+<thead><tr><th>ID</th><th>Query</th><th class="n">相关数</th><th class="n">准确率</th><th class="n">查全率</th><th>前 10 名</th></tr></thead>
+<tbody>{{range .Queries}}<tr><td class="mono">{{.ID}}</td><td>{{.Query}}{{if .Error}}<div class="note">{{.Error}}</div>{{end}}</td><td class="n">{{.Relevant}}</td><td class="n">{{pct .Precision}}</td><td class="n">{{pct .Recall}}</td>
+<td class="mono">{{range $i, $p := .Top}}{{if $i}} · {{end}}{{if hit $p}}<span class="hit">{{base (strip $p)}}</span>{{else}}{{base $p}}{{end}}{{end}}</td></tr>{{end}}</tbody>
+</table></div></details>
+</section>
+{{end}}
+
+{{with .QA}}
+<section>
+<h2><span class="no">06</span>智能问答</h2>
+<p class="def">{{def $ "qa"}}</p>
+<div class="scroll"><table>
+<thead><tr><th>类别</th><th class="n">数量</th><th class="n">正确</th><th class="n">准确率</th></tr></thead>
+<tbody>{{range .ByCategory}}<tr><td>{{.Category}}</td><td class="n">{{.N}}</td><td class="n">{{.Correct}}</td><td class="n">{{pct .Accuracy}}</td></tr>{{end}}
+<tr class="total"><td>全部</td><td class="n">{{.Total}}</td><td class="n">{{.Correct}}</td><td class="n">{{pct .Accuracy}}</td></tr></tbody>
+</table></div>
+<p class="note">平均评分 {{f 2 .MeanGrade}} / 2 · 回答延迟中位 {{f 1 .Latency.Median}} ms</p>
+<details><summary>逐题结果（{{len .Items}} 题）</summary>
+<div class="scroll"><table>
+<thead><tr><th>ID</th><th>问题</th><th>参考答案</th><th>系统回答</th><th class="n">判定</th></tr></thead>
+<tbody>{{range .Items}}<tr><td class="mono">{{.ID}}<div class="note">{{.Category}}</div></td><td>{{.Question}}</td><td class="ans note">{{.Reference}}</td><td class="ans">{{.Answer}}{{if .Error}}<div class="note">{{.Error}}</div>{{end}}</td>
+<td class="n"><span class="v {{if .Correct}}ok{{else}}no{{end}}">{{if .Correct}}正确{{else}}错误{{end}}</span><div class="note">{{if eq .Method "geo"}}{{meters .GeoErrorM}}{{else}}{{grade .Grade}}{{end}}</div></td></tr>{{end}}</tbody>
+</table></div></details>
+</section>
+{{end}}
+
+<footer>由 <span class="mono">multimo testsuite</span> 生成，原始数据见同目录 test_report.json。</footer>
+</main>
+</body>
+</html>

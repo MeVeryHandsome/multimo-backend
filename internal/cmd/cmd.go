@@ -23,6 +23,7 @@ import (
 	searchctl "multimo-backend/internal/controller/search"
 	"multimo-backend/internal/controller/system"
 	taskctl "multimo-backend/internal/controller/task"
+	tsctl "multimo-backend/internal/controller/testsuite"
 	"multimo-backend/internal/model/entity"
 	"multimo-backend/internal/pkg/llm"
 	"multimo-backend/internal/pkg/migrate"
@@ -35,12 +36,13 @@ import (
 	"multimo-backend/internal/service/pipeline"
 	"multimo-backend/internal/service/qa"
 	"multimo-backend/internal/service/search"
+	"multimo-backend/internal/service/testsuite"
 	"multimo-backend/manifest"
 )
 
 var Main = gcmd.Command{
 	Name:  consts.AppName,
-	Usage: "multimo [ai-check]",
+	Usage: "multimo [ai-check | testsuite]",
 	Brief: "无人机视频智能分析服务。不带子命令时启动 HTTP 服务和处理队列",
 	Func: func(ctx context.Context, parser *gcmd.Parser) error {
 		return runHTTP(ctx)
@@ -48,7 +50,7 @@ var Main = gcmd.Command{
 }
 
 func init() {
-	if err := Main.AddCommand(&AICheck); err != nil {
+	if err := Main.AddCommand(&AICheck, &Testsuite); err != nil {
 		panic(err)
 	}
 }
@@ -118,6 +120,7 @@ func newApp(ctx context.Context) (*App, error) {
 	app.Dispatcher.Register(analyze.Kind, an.Handle)
 	app.Dispatcher.Register(geo.Kind, gs.Handle)
 	app.Dispatcher.Register(geo.BasemapKind, gs.HandleBasemap)
+	app.Dispatcher.Register(geo.RefineKind, gs.HandleRefine)
 	app.Dispatcher.Register(search.IndexKind, app.Search.HandleIndex)
 	return app, nil
 }
@@ -162,6 +165,7 @@ func runHTTP(ctx context.Context) error {
 			&kfctl.ControllerV1{DB: app.DB, Assets: app.Assets, Dispatcher: app.Dispatcher},
 			&searchctl.ControllerV1{Svc: app.Search},
 			&qactl.ControllerV1{Svc: app.QA},
+			&tsctl.ControllerV1{Runner: &testsuite.Runner{Suite: app.Suite(0), Dir: app.ReportsDir(), Base: ctx}},
 		)
 	})
 	g.Log().Infof(ctx, "multimo %s listening on %s, db %s, data %s, workers %d",

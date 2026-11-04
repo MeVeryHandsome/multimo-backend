@@ -36,6 +36,7 @@ type Service struct {
 	mu      sync.Mutex
 	kfIndex *BM25
 	chIndex *BM25
+	kfUnits map[int64]Unit // analysed keyframes with position and time
 	version string
 	checked time.Time
 }
@@ -58,6 +59,10 @@ type Signals struct {
 	ObjectRank int      `json:"objectRank,omitempty"`
 	RRF        float64  `json:"rrf"`
 	Decision   *float64 `json:"decision,omitempty"`
+	// SpatialDepth is the distance in metres to the boundary of the spatial
+	// filter: positive inside, negative for positions kept within their
+	// accuracy margin outside it.
+	SpatialDepth *float64 `json:"spatialDepthM,omitempty"`
 }
 
 type Result struct {
@@ -114,7 +119,8 @@ func (s *Service) ensureIndexes(ctx context.Context) error {
 		(SELECT count(*) FROM keyframes WHERE search_text IS NOT NULL),
 		(SELECT coalesce(sum(length(search_text)), 0) FROM keyframes),
 		(SELECT count(*) FROM doc_chunks), (SELECT coalesce(max(id), 0) FROM doc_chunks),
-		(SELECT count(*) FROM keyframes WHERE lat IS NOT NULL))`)
+		(SELECT count(*) FROM keyframes WHERE lat IS NOT NULL),
+		(SELECT coalesce(sum(lat + lon), 0)::numeric(20, 6) FROM keyframes WHERE lat IS NOT NULL))`)
 	if err != nil {
 		return err
 	}
@@ -124,16 +130,19 @@ func (s *Service) ensureIndexes(ctx context.Context) error {
 	}
 	start := time.Now()
 	kf, err := s.DB.GetAll(ctx, `SELECT k.id, k.asset_id, coalesce(k.lat, a.lat) AS lat, coalesce(k.lon, a.lon) AS lon,
-		coalesce(extract(epoch FROM coalesce(k.captured_at, a.captured_at))::bigint, 0) AS ts, k.search_text
+		coalesce(extract(epoch FROM coalesce(k.captured_at, a.captured_at))::bigint, 0) AS ts, k.search_text,
+		coalesce(CASE WHEN k.lat IS NOT NULL THEN k.geo_accuracy_m ELSE a.geo_accuracy_m END, 0) AS acc
 		FROM keyframes k JOIN assets a ON a.id = k.asset_id WHERE k.search_text IS NOT NULL`)
 	if err != nil {
 		return err
 	}
 	units, texts := make([]Unit, len(kf)), make([]string, len(kf))
+	byID := make(map[int64]Unit, len(kf))
 	for i, r := range kf {
 		units[i] = Unit{Kind: "keyframe", ID: r["id"].Int64(), AssetID: r["asset_id"].Int64(),
-			Lat: nullFloat(r["lat"]), Lon: nullFloat(r["lon"]), TS: r["ts"].Int64()}
+			Lat: nullFloat(r["lat"]), Lon: nullFloat(r["lon"]), TS: r["ts"].Int64(), Acc: r["acc"].Float64()}
 		texts[i] = r["search_text"].String()
+		byID[units[i].ID] = units[i]
 	}
 	ch, err := s.DB.GetAll(ctx, `SELECT id, asset_id, text FROM doc_chunks`)
 	if err != nil {
@@ -144,7 +153,7 @@ func (s *Service) ensureIndexes(ctx context.Context) error {
 		cu[i] = Unit{Kind: "chunk", ID: r["id"].Int64(), AssetID: r["asset_id"].Int64(), Lat: math.NaN(), Lon: math.NaN()}
 		ct[i] = r["text"].String()
 	}
-	s.kfIndex, s.chIndex, s.version = NewBM25(units, texts), NewBM25(cu, ct), v.String()
+	s.kfIndex, s.chIndex, s.kfUnits, s.version = NewBM25(units, texts), NewBM25(cu, ct), byID, v.String()
 	g.Log().Infof(ctx, "search index rebuilt: %d keyframes, %d chunks in %s", len(units), len(cu), time.Since(start).Round(time.Millisecond))
 	return nil
 }
@@ -187,13 +196,36 @@ func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
 	if err := s.ensureIndexes(ctx); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	units := s.kfUnits
+	s.mu.Unlock()
 	assets, err := s.allowedAssets(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	hard := f.Spatial() || f.Temporal()
+	spatial := f.Spatial()
+	byDistance := f.Lat != nil && pureSpatial(q)
 	keepKF := func(u Unit) bool { return assets[u.AssetID] != nil && passes(u, &f) }
 	keepCh := func(u Unit) bool { return assets[u.AssetID] != nil && !hard }
+	// SQL prefilters on the area grown by the largest margin; the exact
+	// per-keyframe check happens on the retrieved hits.
+	wide := f
+	if spatial {
+		wide = f.widen(maxSpatialMargin)
+	}
+	exact := func(hits []Hit) []Hit {
+		if !spatial {
+			return hits
+		}
+		out := hits[:0]
+		for _, h := range hits {
+			if u, ok := units[h.Unit.ID]; ok && passes(u, &f) {
+				out = append(out, h)
+			}
+		}
+		return out
+	}
 
 	// 2. retrieval
 	tr := time.Now()
@@ -222,27 +254,45 @@ func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
 	tv := time.Now()
 	var vecKF, vecCh, vecImg []Hit
 	if textVec != nil {
-		vecKF, _ = s.vectorKeyframes(ctx, "embedding", textVec, assets, &f)
+		vecKF, _ = s.vectorKeyframes(ctx, "embedding", textVec, assets, &wide)
+		vecKF = exact(vecKF)
 		if !hard {
 			vecCh, _ = s.vectorChunks(ctx, textVec, assets)
 		}
 	}
 	if imgVec != nil {
-		vecImg, _ = s.vectorKeyframes(ctx, "image_embedding", imgVec, assets, &f)
+		vecImg, _ = s.vectorKeyframes(ctx, "image_embedding", imgVec, assets, &wide)
+		vecImg = exact(vecImg)
 	}
 	var objHits []Hit
 	oq := ParseObjects(q)
 	if oq != nil {
-		objHits, _ = s.objectKeyframes(ctx, oq, assets, &f)
+		objHits, _ = s.objectKeyframes(ctx, oq, assets, &wide)
+		objHits = exact(objHits)
+	}
+	var spaceList []Hit
+	if byDistance {
+		spaceList = spaceHits(units, &f, keepKF)
 	}
 	mark("vector", tv)
 
 	// 3. fusion: keyframe and chunk lists are fused separately per signal so
 	// a single strong document cannot crowd out images (and vice versa).
 	fused := fuse(map[string][]Hit{"bm25": append(bmKF, bmCh...), "text": append(vecKF, vecCh...), "image": vecImg,
-		"object": objHits})
+		"object": objHits, "space": spaceList})
 	if len(fused) == 0 {
 		return &Response{Query: q, Filters: f, Objects: oq, Results: []*Result{}, Timings: timings}, nil
+	}
+	if byDistance {
+		// Rank purely by place: nearest first (hydrate keeps the head only).
+		depth := func(h fusedHit) float64 {
+			u, ok := units[h.unit.ID]
+			if !ok || h.unit.Kind != "keyframe" {
+				return math.Inf(-1)
+			}
+			return spatialDepth(u.Lat, u.Lon, &f)
+		}
+		sort.SliceStable(fused, func(i, j int) bool { return depth(fused[i]) > depth(fused[j]) })
 	}
 
 	results, err := s.hydrate(ctx, fused[:min(len(fused), 3*rerankDepth)], assets)
@@ -256,10 +306,30 @@ func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
 	if !req.NoRerank && !hard {
 		reranked = s.rerank(ctx, q, results)
 	} else {
-		maxRRF := results[0].Signals.RRF
+		maxRRF := 0.0
+		for _, r := range results {
+			maxRRF = math.Max(maxRRF, r.Signals.RRF)
+		}
 		for _, r := range results {
 			r.Score = r.Signals.RRF / maxRRF
 			r.Relevant = hard
+			if !spatial || r.Kind != "keyframe" {
+				continue
+			}
+			// Inside the area first, then the accuracy margin outside it;
+			// within each tier by distance (pure place queries) or by text.
+			u := units[r.UnitID]
+			d := spatialDepth(u.Lat, u.Lon, &f)
+			r.Signals.SpatialDepth = &d
+			key := r.Score
+			if byDistance {
+				key = math.Max(0, 1-geo.Haversine(*f.Lat, *f.Lon, u.Lat, u.Lon)/(f.RadiusM+maxSpatialMargin))
+			}
+			if d >= 0 {
+				r.Score = 0.5 + 0.5*key
+			} else {
+				r.Score, r.Relevant = 0.5*key, false
+			}
 		}
 	}
 	mark("rerank", tdec)
@@ -299,14 +369,8 @@ func mergeFilters(parsed, explicit Filters) Filters {
 
 func passes(u Unit, f *Filters) bool {
 	if f.Spatial() {
-		if math.IsNaN(u.Lat) {
-			return false
-		}
-		if f.Lat != nil && geo.Haversine(*f.Lat, *f.Lon, u.Lat, u.Lon) > f.RadiusM {
-			return false
-		}
-		if (f.South != nil && u.Lat < *f.South) || (f.North != nil && u.Lat > *f.North) ||
-			(f.West != nil && u.Lon < *f.West) || (f.East != nil && u.Lon > *f.East) {
+		d := spatialDepth(u.Lat, u.Lon, f)
+		if math.IsNaN(d) || d < -spatialMargin(u.Acc) {
 			return false
 		}
 	}

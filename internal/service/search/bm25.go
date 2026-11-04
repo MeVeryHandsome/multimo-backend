@@ -31,7 +31,8 @@ type Unit struct {
 	AssetID int64
 	Lat     float64 // NaN when unknown
 	Lon     float64
-	TS      int64 // unix seconds, 0 when unknown
+	TS      int64   // unix seconds, 0 when unknown
+	Acc     float64 // position accuracy in metres, 0 when unknown
 }
 
 // NewBM25 indexes texts[i] as units[i].

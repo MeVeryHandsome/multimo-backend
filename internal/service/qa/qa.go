@@ -23,6 +23,7 @@ import (
 	"multimo-backend/internal/pkg/llm"
 	"multimo-backend/internal/service/analyze"
 	"multimo-backend/internal/service/asset"
+	"multimo-backend/internal/service/geo"
 	"multimo-backend/internal/service/keyframe"
 	"multimo-backend/internal/service/search"
 )
@@ -289,7 +290,7 @@ func (s *Service) assetEvidence(ctx context.Context, a *entity.Asset) ([]*Eviden
 			text = fmt.Sprintf("第%.1f秒：%s", k.TsSec, text)
 		}
 		if k.Lat != nil {
-			text += fmt.Sprintf("（该帧位置：北纬%.5f°、东经%.5f°，来源 %s，误差约 %.0f 米）", *k.Lat, *k.Lon, k.GeoSource, val(k.GeoAccuracy))
+			text += fmt.Sprintf("（该帧位置：%s，来源 %s，误差约 %.0f 米）", geo.FormatLatLonZH(*k.Lat, *k.Lon, 5), k.GeoSource, val(k.GeoAccuracy))
 		}
 		ts := k.TsSec
 		out = append(out, &Evidence{Kind: "keyframe", AssetID: a.Id, UnitID: k.Id, Filename: a.Filename, TsSec: &ts,
@@ -327,7 +328,7 @@ func assetSummary(a *entity.Asset) string {
 		parts = append(parts, fmt.Sprintf("拍摄时间 %s UTC（来源：%s）", a.CapturedAt.Layout("2006-01-02 15:04:05"), src))
 	}
 	if a.Lat != nil {
-		parts = append(parts, fmt.Sprintf("位置 北纬%.5f°、经度%.5f°（来源：%s，误差约 %.0f 米）", *a.Lat, *a.Lon, a.GeoSource, val(a.GeoAccuracyM)))
+		parts = append(parts, fmt.Sprintf("位置 %s（来源：%s，误差约 %.0f 米）", geo.FormatLatLonZH(*a.Lat, *a.Lon, 5), a.GeoSource, val(a.GeoAccuracyM)))
 	}
 	if tel, ok := a.Meta["telemetry"].(map[string]any); ok {
 		alt := gconv.Float64(tel["maxAltitudeM"])

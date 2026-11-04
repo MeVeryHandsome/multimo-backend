@@ -12,10 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"image"
 	_ "image/jpeg"
 	_ "image/png"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -373,36 +371,15 @@ func (s *Service) loadTiles(ctx context.Context, m *entity.Asset) ([]Tile, error
 }
 
 func (s *Service) candidates(ctx context.Context, a *entity.Asset, k *kfGeo, tiles []Tile) ([]Candidate, error) {
-	// Photos are matched from the original file (full resolution, no
-	// re-encoding); video keyframes from the extracted frame.
-	src := s.Assets.Abs(k.Path)
-	if a.Type == "image" && (a.Format == "jpeg" || a.Format == "png") {
-		src = a.StoragePath
-	}
-	f, err := os.Open(src)
+	qv, err := s.queryVectors(ctx, a.Id, s.matchSource(a, k.Path))
 	if err != nil {
-		return nil, err
-	}
-	img, _, err := image.Decode(f)
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
-	qs := QueryImages(img)
-	inputs := make([]llm.MMInput, len(qs))
-	for i, q := range qs {
-		j, err := EncodeJPEG(q)
-		if err != nil {
-			return nil, err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		inputs[i] = llm.MMInput{Image: j}
-	}
-	res, err := s.AI.EmbedMultimodal(ctx, "visual-localisation", a.Id, inputs)
-	if err != nil {
 		g.Log().Warningf(ctx, "keyframe %d: query embeddings failed, skipping visual match: %v", k.Id, err)
 		return nil, nil
 	}
-	return RankTiles(res.Vectors, tiles), nil
+	return RankTiles(qv, tiles), nil
 }
 
 func (s *Service) setAssetFromKeyframe(ctx context.Context, assetID int64, source string) error {
@@ -460,6 +437,9 @@ func (s *Service) smooth(ctx context.Context, kfs []*kfGeo, video bool) error {
 	}
 	for id := range touched {
 		if err := s.setAssetFromKeyframe(ctx, id, "visual-track"); err != nil {
+			return err
+		}
+		if err := s.Dispatcher.Enqueue(ctx, id, RefineKind); err != nil {
 			return err
 		}
 	}
