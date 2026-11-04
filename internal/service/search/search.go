@@ -49,50 +49,50 @@ type Request struct {
 	TopK        int      `json:"topK"`
 	GroupBy     string   `json:"groupBy"` // asset (default) | unit
 	NoRerank    bool     `json:"noRerank"`
-	Filters     *Filters `json:"filters"` // explicit filters override parsed ones
+	Filters     *Filters `json:"filters" dc:"生效的过滤条件（解析结果与显式条件合并）"` // explicit filters override parsed ones
 }
 
 type Signals struct {
-	BM25Rank   int      `json:"bm25Rank,omitempty"`
-	TextRank   int      `json:"textRank,omitempty"`
-	ImageRank  int      `json:"imageRank,omitempty"`
-	ObjectRank int      `json:"objectRank,omitempty"`
-	RRF        float64  `json:"rrf"`
-	Decision   *float64 `json:"decision,omitempty"`
+	BM25Rank   int      `json:"bm25Rank,omitempty" dc:"关键词（BM25）召回中的名次"`
+	TextRank   int      `json:"textRank,omitempty" dc:"文本向量召回中的名次"`
+	ImageRank  int      `json:"imageRank,omitempty" dc:"以文搜图召回中的名次"`
+	ObjectRank int      `json:"objectRank,omitempty" dc:"目标计数召回中的名次"`
+	RRF        float64  `json:"rrf" dc:"RRF 融合分"`
+	Decision   *float64 `json:"decision,omitempty" dc:"Decision 模型给出的相关概率"`
 	// SpatialDepth is the distance in metres to the boundary of the spatial
 	// filter: positive inside, negative for positions kept within their
 	// accuracy margin outside it.
-	SpatialDepth *float64 `json:"spatialDepthM,omitempty"`
+	SpatialDepth *float64 `json:"spatialDepthM,omitempty" dc:"到空间过滤边界的距离（米），正数在范围内，负数为定位误差内的范围外结果"`
 }
 
 type Result struct {
-	Kind         string     `json:"kind"` // keyframe | chunk
-	UnitID       int64      `json:"unitId"`
+	Kind         string     `json:"kind" dc:"keyframe（关键帧）或 chunk（文档片段）"` // keyframe | chunk
+	UnitID       int64      `json:"unitId" dc:"关键帧或文档片段的 id"`
 	AssetID      int64      `json:"assetId"`
-	AssetType    string     `json:"assetType"`
+	AssetType    string     `json:"assetType" dc:"素材类型"`
 	Collection   string     `json:"collection"`
 	Filename     string     `json:"filename"`
-	Path         string     `json:"path"` // registered path (testdata-relative) or filename
-	Score        float64    `json:"score"`
-	Relevant     bool       `json:"relevant"`
-	Snippet      string     `json:"snippet"`
-	TsSec        *float64   `json:"tsSec,omitempty"`
-	Page         *int       `json:"page,omitempty"`
+	Path         string     `json:"path" dc:"登记路径（TESTDATA_DIR 下）或文件名"` // registered path (testdata-relative) or filename
+	Score        float64    `json:"score" dc:"排序分（0~1）"`
+	Relevant     bool       `json:"relevant" dc:"系统是否判为相关"`
+	Snippet      string     `json:"snippet" dc:"描述或文档片段原文"`
+	TsSec        *float64   `json:"tsSec,omitempty" dc:"视频内的时间（秒）"`
+	Page         *int       `json:"page,omitempty" dc:"文档页码"`
 	Lat          *float64   `json:"lat,omitempty"`
 	Lon          *float64   `json:"lon,omitempty"`
 	CapturedAt   *time.Time `json:"capturedAt,omitempty"`
-	ImageUrl     string     `json:"imageUrl,omitempty"`
-	ThumbnailUrl string     `json:"thumbnailUrl,omitempty"`
-	Signals      Signals    `json:"signals"`
+	ImageUrl     string     `json:"imageUrl,omitempty" dc:"关键帧图片地址"`
+	ThumbnailUrl string     `json:"thumbnailUrl,omitempty" dc:"素材缩略图地址"`
+	Signals      Signals    `json:"signals" dc:"各路召回的名次和得分"`
 }
 
 type Response struct {
 	Query    string           `json:"query"`
-	Filters  Filters          `json:"filters"`
-	Objects  *ObjectQuery     `json:"objects,omitempty"`
-	Reranked bool             `json:"reranked"`
-	Results  []*Result        `json:"results"`
-	Timings  map[string]int64 `json:"timingsMs"`
+	Filters  Filters          `json:"filters" dc:"生效的过滤条件（解析结果与显式条件合并）"`
+	Objects  *ObjectQuery     `json:"objects,omitempty" dc:"从查询中识别出的目标条件"`
+	Reranked bool             `json:"reranked" dc:"是否经过 Decision 精排"`
+	Results  []*Result        `json:"results" dc:"结果（按 score 降序）"`
+	Timings  map[string]int64 `json:"timingsMs" dc:"各阶段耗时（毫秒）"`
 }
 
 type assetInfo struct {

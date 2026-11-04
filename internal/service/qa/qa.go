@@ -49,30 +49,30 @@ type Request struct {
 }
 
 type Evidence struct {
-	N         int      `json:"n"`
-	Kind      string   `json:"kind"` // asset | keyframe | chunk
+	N         int      `json:"n" dc:"证据编号，与答案中的 [n] 对应"`
+	Kind      string   `json:"kind" dc:"asset（素材概况）、keyframe（关键帧）或 chunk（文档片段）"`
 	AssetID   int64    `json:"assetId"`
 	UnitID    int64    `json:"unitId,omitempty"`
 	Filename  string   `json:"filename"`
 	Page      *int     `json:"page,omitempty"`
 	TsSec     *float64 `json:"tsSec,omitempty"`
-	Text      string   `json:"text"`
+	Text      string   `json:"text" dc:"证据内容（素材概况、关键帧描述或文档原文）"`
 	ImageUrl  string   `json:"imageUrl,omitempty"`
-	Relevance *float64 `json:"relevance,omitempty"`
-	Mentioned bool     `json:"mentioned,omitempty"`
+	Relevance *float64 `json:"relevance,omitempty" dc:"Decision 判断的有用程度"`
+	Mentioned bool     `json:"mentioned,omitempty" dc:"是否为问题中点名的素材"`
 	imagePath string
 }
 
 type Response struct {
 	Question   string           `json:"question"`
-	Answer     string           `json:"answer"`
-	Citations  []int            `json:"citations"`
-	Confidence float64          `json:"confidence"`
-	Intent     string           `json:"intent"`
-	Mentioned  []string         `json:"mentioned"`
-	Evidence   []*Evidence      `json:"evidence"`
-	Fallback   bool             `json:"fallback"`
-	Timings    map[string]int64 `json:"timingsMs"`
+	Answer     string           `json:"answer" dc:"带引用编号的答案"`
+	Citations  []int            `json:"citations" dc:"答案引用的证据编号"`
+	Confidence float64          `json:"confidence" dc:"置信度（0~1）"`
+	Intent     string           `json:"intent" dc:"问题类型：document / visual / location / metadata / cross"`
+	Mentioned  []string         `json:"mentioned" dc:"问题中点名的素材"`
+	Evidence   []*Evidence      `json:"evidence" dc:"证据列表"`
+	Fallback   bool             `json:"fallback" dc:"视觉模型不可用、返回最相关证据原文时为 true"`
+	Timings    map[string]int64 `json:"timingsMs" dc:"各阶段耗时（毫秒）"`
 }
 
 var intents = map[string]string{
@@ -483,9 +483,9 @@ func (s *Service) generate(ctx context.Context, q, intent string, ev []*Evidence
 	}
 	temp := 0.1
 	var out struct {
-		Answer     string  `json:"answer"`
-		Citations  []int   `json:"citations"`
-		Confidence float64 `json:"confidence"`
+		Answer     string  `json:"answer" dc:"带引用编号的答案"`
+		Citations  []int   `json:"citations" dc:"答案引用的证据编号"`
+		Confidence float64 `json:"confidence" dc:"置信度（0~1）"`
 	}
 	resp, err := s.AI.ChatJSON(ctx, llm.ChatRequest{Purpose: "qa-answer", MaxTokens: 1200, Temperature: &temp,
 		Messages: []llm.Message{{Text: fmt.Sprintf(answerPrompt, q, b.String()), Images: images}},
