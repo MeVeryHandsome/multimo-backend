@@ -6,10 +6,10 @@
 <title>Multimo 评测报告</title>
 <style>
 :root {
-  --ground: #e8edef; --paper: #ffffff; --ink: #16212c; --muted: #6a7784; --rule: #cdd5db; --hair: #e1e6ea;
-  --pass: #2e7a4e; --pass-bg: #e2f0e7; --fail: #bf3f2c; --fail-bg: #f8e5e1; --chart: #2a62a3; --magenta: #b01f68;
-  --sans: "Barlow Semi Condensed", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
-  --figures: "Barlow Condensed", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --ground: #f4f6f8; --paper: #ffffff; --ink: #17202a; --muted: #6b7684; --rule: #e2e6eb; --hair: #eceff3;
+  --pass: #2e7d4f; --pass-bg: #e5f2ea; --fail: #c2412d; --fail-bg: #fbe9e5; --chart: #2b63b5; --magenta: #c2185b;
+  --sans: "Source Sans 3", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+  --figures: var(--sans);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -24,7 +24,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.6 var(--sans); }
 main { max-width: 1080px; margin: 0 auto; padding: 36px 16px 80px; }
-header { background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; padding: 22px 24px; margin-bottom: 28px; }
+header { background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 24px; margin-bottom: 28px; }
 h1 { font-size: 28px; line-height: 1.2; margin: 0 0 12px; font-weight: 600; }
 h2 { font-size: 20px; margin: 40px 0 6px; font-weight: 600; }
 h3 { font-size: 16px; margin: 22px 0 8px; font-weight: 600; }
@@ -34,7 +34,7 @@ h3 { font-size: 16px; margin: 22px 0 8px; font-weight: 600; }
 .tally { margin-top: 16px; font-size: 15px; }
 .tally strong { font: 600 26px var(--figures); font-variant-numeric: tabular-nums; margin-right: 4px; }
 .def { color: var(--muted); font-size: 14px; max-width: 76ch; margin: 4px 0 14px; }
-.scroll { overflow-x: auto; margin: 0 0 8px; border: 1px solid var(--rule); border-radius: 3px; }
+.scroll { overflow-x: auto; margin: 0 0 8px; border: 1px solid var(--rule); border-radius: 14px; }
 table { border-collapse: collapse; width: 100%; background: var(--paper); font-size: 14px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hair); vertical-align: top; }
 th { font-weight: 400; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--rule); white-space: nowrap; }
@@ -46,7 +46,7 @@ tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
 tr.aux td { color: var(--muted); }
 .summary td:first-child { font-weight: 600; }
 .summary tr.aux td:first-child { font-weight: 400; }
-.v { display: inline-block; padding: 1px 7px; border-radius: 2px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.v { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .v.ok { color: var(--pass); background: var(--pass-bg); }
 .v.no { color: var(--fail); background: var(--fail-bg); }
 .v.ref { color: var(--muted); font-weight: 400; }
@@ -57,7 +57,7 @@ details { margin: 12px 0; }
 summary { cursor: pointer; color: var(--chart); font-size: 14px; }
 .ans { max-width: 46ch; }
 .hit { color: var(--magenta); font-weight: 600; }
-.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; margin: 10px 0 16px; overflow: hidden; }
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 14px; margin: 10px 0 16px; overflow: hidden; }
 .figures div { background: var(--paper); padding: 10px 12px; }
 .figures span { display: block; font-size: 12px; color: var(--muted); }
 .figures b { font: 600 22px var(--figures); font-variant-numeric: tabular-nums; }
